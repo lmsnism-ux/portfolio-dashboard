@@ -3,7 +3,11 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// GitHub Pages 배포 시 VITE_BASE_PATH=/portfolio-dashboard/ 로 빌드
+const base = process.env.VITE_BASE_PATH ?? '/';
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     tailwindcss(),
@@ -14,7 +18,8 @@ export default defineConfig({
         name: '내 포트폴리오',
         short_name: '포트폴리오',
         description: '전 계좌 자산 현황 대시보드',
-        start_url: '/',
+        start_url: base,
+        scope: base,
         display: 'standalone',
         background_color: '#F2F4F6',
         theme_color: '#3182F6',
@@ -22,7 +27,7 @@ export default defineConfig({
         lang: 'ko',
         icons: [
           {
-            src: '/favicon.svg',
+            src: `${base}favicon.svg`,
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable',
@@ -31,7 +36,7 @@ export default defineConfig({
       },
       workbox: {
         // API는 항상 네트워크 우선 (오프라인일 때만 캐시), 정적 자원은 캐시 우선
-        navigateFallback: '/index.html',
+        navigateFallback: `${base}index.html`,
         runtimeCaching: [
           {
             urlPattern: /^https?.*\/api\/.*/,
