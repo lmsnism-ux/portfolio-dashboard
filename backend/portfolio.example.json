@@ -1,0 +1,134 @@
+{
+  "goal_krw": 120000000,
+  "accounts": [
+    {
+      "name": "토스증권",
+      "type": "기본계좌",
+      "currency": "USD",
+      "holdings": [
+        {
+          "name": "QLD",
+          "ticker": "QLD",
+          "shares": 11.019527,
+          "avg_price_usd": 90.0,
+          "asset_class": "주식",
+          "region": "미국",
+          "auto_buy": {
+            "enabled": true,
+            "amount_usd": 20,
+            "frequency": "daily_weekday"
+          }
+        },
+        {
+          "name": "TQQQ",
+          "ticker": "TQQQ",
+          "shares": 0.168373,
+          "avg_price_usd": null,
+          "asset_class": "주식",
+          "region": "미국"
+        }
+      ]
+    },
+    {
+      "name": "미래에셋 ISA",
+      "type": "ISA",
+      "holdings": [
+        {
+          "name": "SOL AI반도체TOP2플러스",
+          "ticker": "0167A0",
+          "shares": 44,
+          "avg_price_krw": 22990,
+          "asset_class": "주식",
+          "region": "국내",
+          "auto_buy": {
+            "enabled": true,
+            "amount_krw": 100000.0,
+            "frequency": "weekly_monday"
+          }
+        },
+        {
+          "name": "TIGER 미국테크TOP10 INDXX",
+          "ticker": "381170",
+          "shares": 248,
+          "avg_price_krw": 30644,
+          "asset_class": "주식",
+          "region": "미국"
+        }
+      ]
+    },
+    {
+      "name": "미래에셋 연금저축",
+      "type": "연금저축",
+      "holdings": [
+        {
+          "name": "TIGER 미국테크TOP10 INDXX",
+          "ticker": "381170",
+          "shares": 404,
+          "avg_price_krw": 28240,
+          "asset_class": "주식",
+          "region": "미국"
+        }
+      ]
+    },
+    {
+      "name": "국민은행 퇴직연금 IRP",
+      "type": "IRP",
+      "etf_limit": 0.7,
+      "holdings": [
+        {
+          "name": "TIGER 미국테크TOP10 INDXX",
+          "ticker": "381170",
+          "shares": 637,
+          "avg_price_krw": 28281,
+          "asset_type": "ETF",
+          "asset_class": "주식",
+          "region": "미국"
+        },
+        {
+          "name": "ACE TDF2050 액티브적격",
+          "ticker": "0021E0",
+          "shares": 730,
+          "avg_price_krw": 11249,
+          "asset_type": "안전자산",
+          "asset_class": "혼합",
+          "region": "글로벌"
+        },
+        {
+          "name": "TIGER 반도체TOP10",
+          "ticker": "396500",
+          "shares": 1,
+          "avg_price_krw": 48420,
+          "asset_type": "ETF",
+          "asset_class": "주식",
+          "region": "국내"
+        }
+      ]
+    },
+    {
+      "name": "삼성증권 IRP",
+      "type": "IRP",
+      "etf_limit": 0.7,
+      "holdings": [
+        {
+          "name": "KODEX 미국S&P500",
+          "ticker": "379800",
+          "shares": 130,
+          "avg_price_krw": 19259,
+          "asset_type": "ETF",
+          "asset_class": "주식",
+          "region": "미국"
+        },
+        {
+          "name": "삼성 디폴트옵션 적극투자형2",
+          "ticker": null,
+          "shares": null,
+          "buy_amount_krw": 3114511,
+          "snapshot_value_krw": 4823468,
+          "asset_type": "안전자산",
+          "asset_class": "혼합",
+          "region": "글로벌"
+        }
+      ]
+    }
+  ]
+}

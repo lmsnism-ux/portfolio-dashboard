@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Data / cache (개인 데이터 — 레포에 포함 안 함)
+backend/price_cache.json
+backend/history.db
+backend/portfolio.json
+
+# Node
+node_modules/
+dist/
+.DS_Store
+
+# Build artifacts
+frontend/dist/
