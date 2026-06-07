@@ -26,9 +26,7 @@ export default function TickerTape({ data }: Props) {
         {repeated.map((item, i) => (
           <span key={i} className="flex items-center gap-1.5 px-3 shrink-0">
             <span className="text-[11px] font-semibold text-toss-text-secondary whitespace-nowrap">
-              {item.ticker
-                ? item.ticker
-                : item.name.length > 8 ? item.name.slice(0, 8) + '…' : item.name}
+              {item.name.length > 10 ? item.name.slice(0, 10) + '…' : item.name}
             </span>
             <span className={`num text-[11px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
               {item.pct! >= 0 ? '+' : ''}{item.pct!.toFixed(2)}%

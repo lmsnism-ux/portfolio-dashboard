@@ -363,6 +363,29 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                               {h.ticker && (
                                 <p className="text-[11px] text-toss-text-tertiary mt-0.5">{h.ticker}</p>
                               )}
+                              {/* 보유수량 · 평단가 · 현재가 */}
+                              {!h.is_snapshot && !editMode && h.shares !== null && (
+                                <p className="text-[10px] text-toss-text-tertiary mt-0.5 flex flex-wrap gap-x-1">
+                                  <span className="num">
+                                    {Number.isInteger(h.shares)
+                                      ? `${h.shares.toLocaleString('ko-KR')}주`
+                                      : h.shares < 1
+                                        ? `${h.shares.toFixed(6)}주`
+                                        : `${h.shares.toFixed(2)}주`}
+                                  </span>
+                                  {h.avg_price !== null && (
+                                    <span className="num">
+                                      · 평단{' '}
+                                      {h.currency === 'USD'
+                                        ? `$${h.avg_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                        : `₩${h.avg_price.toLocaleString('ko-KR')}`}
+                                    </span>
+                                  )}
+                                  {h.current_price_display && (
+                                    <span className="num">· 현재 {h.current_price_display}</span>
+                                  )}
+                                </p>
+                              )}
                             </div>
 
                             {editMode ? (

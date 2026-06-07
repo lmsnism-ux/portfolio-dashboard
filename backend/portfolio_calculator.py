@@ -137,6 +137,10 @@ def calc_irp_etf_ratio(account: dict, prices: dict, usd_krw: float) -> dict:
         ticker = h.get("ticker")
         shares = h.get("shares")
 
+        if h.get("snapshot_value_usd"):
+            val = h["snapshot_value_usd"] * usd_krw
+            total_value += val
+            continue
         if h.get("snapshot_value_krw"):
             val = h["snapshot_value_krw"]
             total_value += val
@@ -221,7 +225,35 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             shares = h.get("shares")
             currency = account.get("currency", "KRW")
 
-            # 스냅샷 값만 있는 종목 (삼성 디폴트옵션)
+            # USD 스냅샷 (달러 예수금 등) — 환율 기준 KRW 환산
+            if h.get("snapshot_value_usd") and not ticker:
+                snap_val_usd = h["snapshot_value_usd"]
+                snap_val = snap_val_usd * usd_krw
+                account_value_krw += snap_val
+                total_value_krw += snap_val
+                total_usd_value += snap_val_usd
+
+                holdings_data.append({
+                    "name": h["name"],
+                    "ticker": None,
+                    "shares": None,
+                    "avg_price": None,
+                    "current_price": None,
+                    "current_price_display": f"${snap_val_usd:,.2f}",
+                    "value_krw": round(snap_val),
+                    "cost_krw": round(snap_val),
+                    "profit_krw": 0,
+                    "profit_pct": 0.0,
+                    "day_change_pct": None,
+                    "day_change_krw": None,
+                    "currency": "USD",
+                    "price_label": "달러 예수금",
+                    "is_snapshot": True,
+                    "auto_buy": h.get("auto_buy"),
+                })
+                continue
+
+            # 스냅샷 값만 있는 종목 (삼성 디폴트옵션 등)
             if h.get("snapshot_value_krw") and not ticker:
                 snap_val = h["snapshot_value_krw"]
                 buy_amt = h.get("buy_amount_krw", snap_val)
@@ -398,8 +430,11 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             # 평가금액 산출 (위 루프에서 못 받아오니 별도)
             ticker = h.get("ticker")
             shares = h.get("shares")
+            snap_usd = h.get("snapshot_value_usd")
             snap = h.get("snapshot_value_krw")
-            if snap and not ticker:
+            if snap_usd and not ticker:
+                value_krw = snap_usd * usd_krw
+            elif snap and not ticker:
                 value_krw = snap
             elif ticker and shares:
                 p = prices.get(ticker, {})
