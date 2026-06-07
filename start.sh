@@ -2,6 +2,12 @@
 # 포트폴리오 대시보드 실행 스크립트
 # PC + 모바일(같은 WiFi) 동시 접근 가능
 
+# Railway 환경이면 uvicorn만 실행하고 종료
+if [ -n "$RAILWAY_ENVIRONMENT" ] || [ -n "$RAILWAY_PROJECT_ID" ]; then
+  cd "$(dirname "$0")/backend"
+  exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
+fi
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== 포트폴리오 대시보드 시작 ==="
