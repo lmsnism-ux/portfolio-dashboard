@@ -148,6 +148,7 @@ class HoldingUpdate(BaseModel):
     avg_price_krw: Optional[float] = None
     avg_price_usd: Optional[float] = None
     auto_buy: Optional[AutoBuyUpdate] = None
+    remove_auto_buy: bool = False  # True → auto_buy 키 완전 제거
 
 
 def _save_portfolio(portfolio: dict[str, Any]) -> None:
@@ -178,7 +179,9 @@ async def update_holding(update: HoldingUpdate):
             holding["avg_price_krw"] = update.avg_price_krw
         if update.avg_price_usd is not None:
             holding["avg_price_usd"] = update.avg_price_usd
-        if update.auto_buy is not None:
+        if update.remove_auto_buy:
+            holding.pop("auto_buy", None)
+        elif update.auto_buy is not None:
             ab = holding.get("auto_buy") or {}
             ab["enabled"] = update.auto_buy.enabled
             if update.auto_buy.amount_usd is not None:

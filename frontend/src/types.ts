@@ -79,6 +79,25 @@ export interface AutoBuySummary {
   currency: string;
 }
 
+export interface LoanInfo {
+  balance_krw: number;
+  rate_pct: number;
+  repayment_type: string;
+  last_payment_krw: number;
+  last_payment_date: string;
+}
+
+export interface PropertyData {
+  name: string;
+  purchase_price_krw: number;
+  current_value_krw: number;
+  loan?: LoanInfo;
+}
+
+export interface RealEstateData {
+  properties: PropertyData[];
+}
+
 export interface HistoryPoint {
   date: string;
   total_value_krw: number;
@@ -114,6 +133,7 @@ export interface PortfolioSummary {
   goal_progress_pct: number | null;
   market_status: 'live' | 'closed';
   day_change_label: string;
+  real_estate?: RealEstateData;
   calculated_at: string;
   price_updated_at: string | null;
   cache_stale_hours: number | null;

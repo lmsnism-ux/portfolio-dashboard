@@ -508,5 +508,6 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "goal_progress_pct": goal_progress,
         "market_status": market_status,
         "day_change_label": day_change_label,
+        "real_estate": portfolio.get("real_estate"),
         "calculated_at": datetime.now().isoformat(),
     }

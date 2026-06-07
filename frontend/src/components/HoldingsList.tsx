@@ -79,8 +79,11 @@ interface Props {
   onMoveAccount: (idx: number, dir: -1 | 1) => void;
 }
 
+type PeriodMode = '오늘' | '전체';
+
 export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount }: Props) {
   const [editMode, setEditMode] = useState(false);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('오늘');
 
   const [hidden, setHidden] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); }
@@ -193,7 +196,26 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
     <section>
       {/* 섹션 헤더 */}
       <div className="flex items-center justify-between px-1 mb-3">
-        <h2 className="text-sm font-bold text-toss-text-secondary">보유 종목</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-bold text-toss-text-secondary">보유 종목</h2>
+          {!editMode && (
+            <div className="flex bg-toss-card border border-toss-border rounded-full p-0.5 gap-0.5">
+              {(['오늘', '전체'] as PeriodMode[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPeriodMode(p)}
+                  className={`px-2.5 py-0.5 text-[10px] rounded-full transition-all font-medium ${
+                    periodMode === p
+                      ? 'bg-toss-blue text-white shadow-sm'
+                      : 'text-toss-text-tertiary hover:text-toss-text-secondary'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {editMode ? (
             <>
@@ -423,22 +445,40 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                 </div>
                               </div>
                             ) : (
-                              /* 뷰 모드: 평가금액 + 오늘 등락 + 거래 버튼 */
+                              /* 뷰 모드: 평가금액 + 기간별 수익 + 거래 버튼 */
                               <div className="flex items-center gap-2 shrink-0">
                                 <div className="text-right">
                                   <p className="num text-[13px] font-bold text-toss-text-primary">
                                     {hideAssets ? '••••' : fmtKRW(h.value_krw)}
                                   </p>
-                                  {h.day_change_krw !== null && (
-                                    <p className={`num text-[11px] ${colorClass(h.day_change_krw)}`}>
-                                      {h.day_change_krw >= 0 ? '+' : ''}
-                                      {hideAssets ? '••••' : fmtKRW(h.day_change_krw)}
-                                    </p>
-                                  )}
-                                  {h.day_change_pct !== null && (
-                                    <p className={`num text-[10px] ${colorClass(h.day_change_pct)}`}>
-                                      ({fmtPct(h.day_change_pct)})
-                                    </p>
+                                  {periodMode === '오늘' ? (
+                                    <>
+                                      {h.day_change_krw !== null && (
+                                        <p className={`num text-[11px] ${colorClass(h.day_change_krw)}`}>
+                                          {h.day_change_krw >= 0 ? '+' : ''}
+                                          {hideAssets ? '••••' : fmtKRW(h.day_change_krw)}
+                                        </p>
+                                      )}
+                                      {h.day_change_pct !== null && (
+                                        <p className={`num text-[10px] ${colorClass(h.day_change_pct)}`}>
+                                          ({fmtPct(h.day_change_pct)})
+                                        </p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {h.profit_krw !== null && (
+                                        <p className={`num text-[11px] ${colorClass(h.profit_krw)}`}>
+                                          {h.profit_krw >= 0 ? '+' : ''}
+                                          {hideAssets ? '••••' : fmtKRW(h.profit_krw)}
+                                        </p>
+                                      )}
+                                      {h.profit_pct !== null && (
+                                        <p className={`num text-[10px] ${colorClass(h.profit_pct)}`}>
+                                          ({fmtPct(h.profit_pct)})
+                                        </p>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                                 {/* 빠른 매수/매도 버튼 (스냅샷 종목 제외) */}

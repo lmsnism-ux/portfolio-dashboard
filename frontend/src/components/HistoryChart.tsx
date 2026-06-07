@@ -6,16 +6,14 @@ import { fetchHistory, triggerBackfill } from '../api';
 import { fmtKRW, fmtPct, colorClass } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
+type Range = '1M' | '3M' | 'YTD' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
 
 const RANGES: { key: Range; label: string; days: number }[] = [
   { key: 'CM', label: '당월', days: 0 },
   { key: 'PM', label: '전월', days: 0 },
   { key: '1M', label: '1개월', days: 31 },
   { key: '3M', label: '3개월', days: 92 },
-  { key: '6M', label: '6개월', days: 183 },
   { key: 'YTD', label: '올해', days: 0 },
-  { key: '1Y', label: '1년', days: 365 },
   { key: 'ALL', label: '전체', days: 0 },
 ];
 
@@ -171,21 +169,27 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     return { monthDiff, monthPct, yearDiff, yearPct };
   }, [items]);
 
-  // 오늘 기여 종목 (day_change_krw 기준, 절대값 큰 순)
+  const RANGE_LABEL: Partial<Record<Range, string>> = {
+    CM: '당월', PM: '전월', '1M': '1개월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
+  };
+
+  // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시
+  const useProfit = range === 'ALL';
   const contributors = useMemo(() => {
-    return data.accounts
-      .flatMap(a => a.holdings)
+    const holdings = data.accounts.flatMap(a => a.holdings);
+    if (useProfit) {
+      return holdings
+        .filter(h => h.profit_krw !== null && h.profit_krw !== 0)
+        .map(h => ({ name: h.name, changeKrw: h.profit_krw!, changePct: h.profit_pct }))
+        .sort((a, b) => Math.abs(b.changeKrw) - Math.abs(a.changeKrw))
+        .slice(0, 6);
+    }
+    return holdings
       .filter(h => h.day_change_krw !== null && h.day_change_krw !== 0)
-      .map(h => ({
-        name: h.name,
-        day_change_krw: h.day_change_krw!,
-        day_change_pct: h.day_change_pct,
-        profit_krw: h.profit_krw,
-        profit_pct: h.profit_pct,
-      }))
-      .sort((a, b) => Math.abs(b.day_change_krw) - Math.abs(a.day_change_krw))
+      .map(h => ({ name: h.name, changeKrw: h.day_change_krw!, changePct: h.day_change_pct }))
+      .sort((a, b) => Math.abs(b.changeKrw) - Math.abs(a.changeKrw))
       .slice(0, 6);
-  }, [data.accounts]);
+  }, [data.accounts, useProfit]);
 
   const availableDays = items?.length ?? 0;
 
@@ -384,12 +388,24 @@ export default function HistoryChart({ data, hideAssets }: Props) {
           )}
         </div>
 
-        {/* 오늘 수익 기여 종목 */}
+        {/* 기간별 수익 기여 종목 */}
         {contributors.length > 0 && (
           <div className="mt-4 pt-4 border-t border-toss-border/50">
-            <p className="text-[10px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-2.5">
-              오늘 수익 기여 종목
-            </p>
+            <div className="flex items-center gap-2 mb-2.5">
+              <p className="text-[10px] font-semibold text-toss-text-tertiary tracking-widest uppercase">
+                {RANGE_LABEL[range] ?? '선택 기간'} 수익 기여 종목
+              </p>
+              {!useProfit && range !== 'CM' && (
+                <span className="text-[9px] text-toss-text-tertiary bg-toss-bg px-1.5 py-0.5 rounded-full">
+                  오늘 기준
+                </span>
+              )}
+              {useProfit && (
+                <span className="text-[9px] text-toss-text-tertiary bg-toss-bg px-1.5 py-0.5 rounded-full">
+                  매입 이후 누적
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {contributors.map((c, i) => (
                 <div key={i} className="flex items-center gap-2 bg-toss-bg rounded-xl px-3 py-2">
@@ -397,13 +413,13 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                     <p className="text-[11px] font-medium text-toss-text-secondary truncate">{c.name}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`num text-[12px] font-bold ${colorClass(c.day_change_krw)}`}>
-                      {c.day_change_krw >= 0 ? '+' : ''}
-                      {hideAssets ? '••••' : fmtKRW(c.day_change_krw)}
+                    <p className={`num text-[12px] font-bold ${colorClass(c.changeKrw)}`}>
+                      {c.changeKrw >= 0 ? '+' : ''}
+                      {hideAssets ? '••••' : fmtKRW(c.changeKrw)}
                     </p>
-                    {c.day_change_pct !== null && (
-                      <p className={`num text-[10px] ${colorClass(c.day_change_pct)}`}>
-                        ({c.day_change_pct >= 0 ? '+' : ''}{c.day_change_pct.toFixed(2)}%)
+                    {c.changePct !== null && (
+                      <p className={`num text-[10px] ${colorClass(c.changePct)}`}>
+                        ({c.changePct >= 0 ? '+' : ''}{c.changePct.toFixed(2)}%)
                       </p>
                     )}
                   </div>

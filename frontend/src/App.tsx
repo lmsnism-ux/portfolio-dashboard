@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
 import AutoBuyCard from './components/AutoBuyCard';
+import RealEstateCard from './components/RealEstateCard';
 import HistoryChart from './components/HistoryChart';
 import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
@@ -125,7 +126,7 @@ export default function App() {
           hideAssets={hideAssets}
         />
 
-        {data.auto_buy_items?.length > 0 && <AutoBuyCard items={data.auto_buy_items} />}
+        <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
 
         {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
         <HoldingsList
@@ -136,6 +137,10 @@ export default function App() {
           onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
           onMoveAccount={moveAccount}
         />
+
+        {data.real_estate && (
+          <RealEstateCard data={data.real_estate} hideAssets={hideAssets} />
+        )}
 
         <div className="h-4" />
       </main>

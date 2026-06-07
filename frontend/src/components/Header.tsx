@@ -2,6 +2,12 @@ import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime } from '../utils';
 
+const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
+function shortTickerName(name: string): string {
+  const stripped = name.replace(ETF_BRAND_RE, '').trim();
+  return stripped.length > 9 ? stripped.slice(0, 9) + '…' : stripped;
+}
+
 interface Props {
   data: PortfolioSummary;
   dark: boolean;
@@ -82,51 +88,65 @@ export default function Header({
           </div>
         </div>
 
-        {/* 총자산 + 종목 등락 */}
-        <div className="mb-4 flex items-start gap-5">
-          <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase mb-1.5">총 자산</p>
-            <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
-              {hideAssets ? MASK : fmtKRW(data.total_value_krw)}
-            </h1>
-            {!hideAssets && (
-              <p className="num text-xs text-toss-text-tertiary mt-1.5">
-                {fmtKRWFull(data.total_value_krw)}
-              </p>
-            )}
-          </div>
-          {(() => {
-            const items = data.accounts.flatMap(acc =>
-              acc.holdings
-                .filter(h => h.day_change_pct !== null)
-                .map(h => ({ name: h.name, pct: h.day_change_pct as number, krwChange: h.day_change_krw }))
-            ).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
-            if (!items.length) return null;
-            return (
-              <div className="hidden md:block shrink-0 pt-1 max-w-[210px]">
-                <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-                <div className="flex flex-wrap gap-1">
-                  {items.map((item, i) => (
-                    <div
-                      key={i}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] cursor-default ${
-                        item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft'
-                      }`}
-                      title={`${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`}
-                    >
-                      <span className="text-toss-text-secondary whitespace-nowrap max-w-[58px] truncate font-medium">
-                        {item.name.length > 6 ? item.name.slice(0, 6) + '…' : item.name}
-                      </span>
-                      <span className={`num font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
-                        {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
-                      </span>
-                    </div>
-                  ))}
+        {/* 총자산 + 종목 등락 (데스크탑: 우측 배지 패널) */}
+        {(() => {
+          const tickerItems = data.accounts.flatMap(acc =>
+            acc.holdings
+              .filter(h => h.day_change_pct !== null)
+              .map(h => ({ name: h.name, pct: h.day_change_pct as number, krwChange: h.day_change_krw }))
+          ).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+
+          const Badge = ({ item, i }: { item: typeof tickerItems[0]; i: number }) => (
+            <div
+              key={i}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] cursor-default shrink-0 ${
+                item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft'
+              }`}
+              title={`${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`}
+            >
+              <span className="text-toss-text-secondary whitespace-nowrap font-medium">
+                {shortTickerName(item.name)}
+              </span>
+              <span className={`num font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
+                {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
+              </span>
+            </div>
+          );
+
+          return (
+            <>
+              <div className="mb-4 flex items-start gap-5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase mb-1.5">총 자산</p>
+                  <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
+                    {hideAssets ? MASK : fmtKRW(data.total_value_krw)}
+                  </h1>
+                  {!hideAssets && (
+                    <p className="num text-xs text-toss-text-tertiary mt-1.5">
+                      {fmtKRWFull(data.total_value_krw)}
+                    </p>
+                  )}
                 </div>
+                {tickerItems.length > 0 && (
+                  <div className="hidden md:block shrink-0 pt-1 max-w-[240px]">
+                    <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
+                    <div className="flex flex-wrap gap-1">
+                      {tickerItems.map((item, i) => <Badge key={i} item={item} i={i} />)}
+                    </div>
+                  </div>
+                )}
               </div>
-            );
-          })()}
-        </div>
+              {/* 모바일: 총자산 아래 가로 스크롤 배지 */}
+              {tickerItems.length > 0 && (
+                <div className="md:hidden -mx-5 px-5 mb-3 overflow-x-auto">
+                  <div className="flex gap-1.5 w-max pb-1">
+                    {tickerItems.map((item, i) => <Badge key={i} item={item} i={i} />)}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* 오늘 등락 / 누적 수익 / 환율 */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
