@@ -6,12 +6,11 @@ import { fetchHistory, triggerBackfill } from '../api';
 import { fmtKRW, fmtPct, colorClass } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = '1M' | '3M' | 'YTD' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
+type Range = '3M' | 'YTD' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
 
 const RANGES: { key: Range; label: string; days: number }[] = [
   { key: 'CM', label: '당월', days: 0 },
   { key: 'PM', label: '전월', days: 0 },
-  { key: '1M', label: '1개월', days: 31 },
   { key: '3M', label: '3개월', days: 92 },
   { key: 'YTD', label: '올해', days: 0 },
   { key: 'ALL', label: '전체', days: 0 },
@@ -90,7 +89,7 @@ function getRangeCutoff(key: Range, customFrom: string, customTo: string): { fro
 }
 
 export default function HistoryChart({ data, hideAssets }: Props) {
-  const [range, setRange] = useState<Range>('1M');
+  const [range, setRange] = useState<Range>('CM');
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -170,7 +169,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
   }, [items]);
 
   const RANGE_LABEL: Partial<Record<Range, string>> = {
-    CM: '당월', PM: '전월', '1M': '1개월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
+    CM: '당월', PM: '전월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
   };
 
   // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시

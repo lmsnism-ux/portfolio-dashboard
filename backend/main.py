@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -77,6 +77,8 @@ def _cache_stale_hours(updated_at: str | None) -> float | None:
         return None
     try:
         ts = datetime.fromisoformat(updated_at)
+        if ts.tzinfo is not None:
+            return (datetime.now(timezone.utc) - ts.astimezone(timezone.utc)).total_seconds() / 3600
         return (datetime.now() - ts).total_seconds() / 3600
     except Exception:
         return None

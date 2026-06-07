@@ -83,7 +83,7 @@ type PeriodMode = '오늘' | '전체';
 
 export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount }: Props) {
   const [editMode, setEditMode] = useState(false);
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('오늘');
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('전체');
 
   const [hidden, setHidden] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); }

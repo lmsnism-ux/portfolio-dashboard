@@ -51,3 +51,10 @@ export function relativeTime(isoStr: string | null): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
   return `${Math.floor(diff / 86400)}일 전`;
 }
+
+export function fmtAbsTime(isoStr: string | null): string {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}

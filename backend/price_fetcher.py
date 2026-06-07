@@ -157,7 +157,7 @@ def fetch_korean_etf_price(ticker: str):
             "currency": "KRW",
             "is_realtime": is_market_hours,
             "label": "실시간" if is_market_hours else "종가 기준",
-            "fetched_at": datetime.now().isoformat(),
+            "fetched_at": datetime.now(KST).isoformat(),
         }
     except Exception as e:
         logger.warning(f"한국 ETF {ticker} 조회 실패: {e}")
@@ -203,7 +203,7 @@ def fetch_us_stock_price(ticker: str):
             "currency": "USD",
             "is_realtime": is_market_hours,
             "label": "실시간" if is_market_hours else "종가 기준",
-            "fetched_at": datetime.now().isoformat(),
+            "fetched_at": datetime.now(KST).isoformat(),
         }
     except Exception as e:
         logger.warning(f"미국 주식 {ticker} 조회 실패: {e}")
@@ -239,7 +239,7 @@ def refresh_all_prices() -> dict:
         time.sleep(0.3)
 
     cache["prices"] = prices
-    cache["updated_at"] = datetime.now().isoformat()
+    cache["updated_at"] = datetime.now(KST).isoformat()
     _save_cache(cache)
     return cache
 

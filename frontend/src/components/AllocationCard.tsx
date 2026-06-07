@@ -18,6 +18,21 @@ function holdingStyle(name: string): string {
 
 const STYLE_ORDER = ['레버리지', '성장·테마', '인덱스·코어', '배당·인컴', '채권·안전', 'TDF·혼합', '현금·예금', '기타'];
 
+const STYLE_WEIGHTS: Record<string, number> = {
+  '레버리지': 3, '성장·테마': 2, '인덱스·코어': 1.5,
+  '배당·인컴': 1, 'TDF·혼합': 0.8, '채권·안전': 0.5, '현금·예금': 0, '기타': 1,
+};
+
+function computePersonality(groups: Array<{ style: string; pct: number }>) {
+  const score = groups.reduce((s, g) => s + g.pct * (STYLE_WEIGHTS[g.style] ?? 1), 0);
+  if (score >= 200) return { label: '초공격형', color: '#F04452', bg: 'bg-red-500/10', sub: '레버리지 고비중' };
+  if (score >= 150) return { label: '공격형',   color: '#E96AFF', bg: 'bg-purple-400/10', sub: '성장·기술 중심' };
+  if (score >= 110) return { label: '성장형',   color: '#8B5CF6', bg: 'bg-purple-500/10', sub: '인덱스·성장 중심' };
+  if (score >= 70)  return { label: '균형형',   color: '#3182F6', bg: 'bg-blue-500/10',   sub: '위험·안전 균형' };
+  if (score >= 35)  return { label: '안정형',   color: '#2DAF4E', bg: 'bg-emerald-500/10', sub: '배당·채권 중심' };
+  return                    { label: '보수형',   color: '#9CA3AF', bg: 'bg-gray-500/10',   sub: '예금·현금 중심' };
+}
+
 const STYLE_CONFIG: Record<string, { label: string; color: string; bg: string; text: string; desc: string }> = {
   '레버리지':    { label: '레버리지',   color: '#F04452', bg: 'bg-red-500/10',     text: 'text-red-400',    desc: '2x·3x ETF' },
   '성장·테마':   { label: '성장·테마',  color: '#8B5CF6', bg: 'bg-purple-500/10',  text: 'text-purple-400', desc: '테크·AI·반도체' },
@@ -134,7 +149,20 @@ export default function AllocationCard({ data, hideAssets }: Props) {
       {/* 투자 성향 분류 */}
       {styleGroups.length > 0 && (
         <div className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] p-4">
-          <h3 className="text-xs font-semibold text-toss-text-secondary mb-3">투자 성향 분류</h3>
+          {(() => {
+            const p = computePersonality(styleGroups);
+            return (
+              <div className="flex items-center justify-between mb-0.5">
+                <h3 className="text-xs font-semibold text-toss-text-secondary">투자 성향 분류</h3>
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${p.bg}`}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: p.color }} />
+                  <span className="text-[11px] font-bold" style={{ color: p.color }}>{p.label}</span>
+                  <span className="text-[10px] opacity-70" style={{ color: p.color }}>{p.sub}</span>
+                </div>
+              </div>
+            );
+          })()}
+          <div className="h-px bg-toss-border/50 mb-3 mt-2" />
 
           {/* 스택 바 */}
           <div className="flex h-3 rounded-full overflow-hidden gap-0.5 mb-3">

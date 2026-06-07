@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime } from '../utils';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime } from '../utils';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
+const INDEX_RE = /코스피|나스닥|kospi|nasdaq|s&p/i;
 
 function shortTickerName(name: string): string {
   const stripped = name.replace(ETF_BRAND_RE, '').trim();
@@ -29,18 +30,35 @@ interface Props {
 
 type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number };
 
-function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
+function Badge({ item, hideAssets, isIndex = false }: { item: TickerItem; hideAssets: boolean; isIndex?: boolean }) {
+  const bgClass = item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft';
+  const titleAttr = `${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`;
+
+  if (isIndex) {
+    return (
+      <div
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-default shrink-0 ${bgClass}`}
+        title={titleAttr}
+      >
+        <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">
+          {shortTickerName(item.name)}
+        </span>
+        <span className={`num text-[14px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
+          {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(2)}%
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] cursor-default shrink-0 ${
-        item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft'
-      }`}
-      title={`${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`}
+      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg cursor-default shrink-0 ${bgClass}`}
+      title={titleAttr}
     >
-      <span className="text-toss-text-secondary whitespace-nowrap font-medium">
+      <span className="text-[10px] text-toss-text-secondary whitespace-nowrap font-medium">
         {shortTickerName(item.name)}
       </span>
-      <span className={`num font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
+      <span className={`num text-[10px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
         {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
       </span>
     </div>
@@ -82,7 +100,7 @@ export default function Header({
     data.accounts.forEach(acc => {
       const catOrd = accCatOrder(acc.type);
       acc.holdings
-        .filter(h => h.day_change_pct !== null && !/\bTDF\b/i.test(h.name))
+        .filter(h => h.day_change_pct !== null && !/TDF/i.test(h.name))
         .forEach(h => {
           const ex = seen.get(h.name);
           const pct = h.day_change_pct as number;
@@ -92,13 +110,16 @@ export default function Header({
         });
     });
     return [...seen.values()].sort((a, b) => {
-      const aIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(a.name);
-      const bIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(b.name);
+      const aIdx = INDEX_RE.test(a.name);
+      const bIdx = INDEX_RE.test(b.name);
       if (aIdx !== bIdx) return aIdx ? -1 : 1;
       if (a.catOrder !== b.catOrder) return a.catOrder - b.catOrder;
       return Math.abs(b.pct) - Math.abs(a.pct);
     });
   })();
+
+  const indexItems = tickerItems.filter(t => INDEX_RE.test(t.name));
+  const otherItems = tickerItems.filter(t => !INDEX_RE.test(t.name));
 
   return (
     <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
@@ -114,8 +135,11 @@ export default function Header({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-toss-text-secondary">내 포트폴리오</span>
-            <span className="text-[10px] text-toss-text-tertiary bg-toss-bg px-2 py-0.5 rounded-full">
-              {relativeTime(data.price_updated_at)} 갱신
+            <span
+              className="text-[10px] text-toss-text-tertiary bg-toss-bg px-2 py-0.5 rounded-full cursor-default"
+              title={`마지막 갱신: ${data.price_updated_at ?? '-'} | ${relativeTime(data.price_updated_at)}`}
+            >
+              {fmtAbsTime(data.price_updated_at)} 기준
             </span>
           </div>
           <div className="flex items-center gap-0.5">
@@ -161,25 +185,45 @@ export default function Header({
             )}
           </div>
 
-          {/* 데스크탑: 우측 배지 패널 (flex-wrap) */}
+          {/* 데스크탑: 우측 배지 패널 */}
           {tickerItems.length > 0 && (
-            <div className="hidden md:block shrink-0 pt-1 max-w-[260px]">
+            <div className="hidden md:block shrink-0 pt-1 max-w-[280px]">
               <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-              <div className="flex flex-wrap gap-1">
-                {tickerItems.map((item, i) => (
-                  <Badge key={i} item={item} hideAssets={hideAssets} />
-                ))}
-              </div>
+              {indexItems.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {indexItems.map((item, i) => (
+                    <Badge key={i} item={item} hideAssets={hideAssets} isIndex />
+                  ))}
+                </div>
+              )}
+              {otherItems.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {otherItems.map((item, i) => (
+                    <Badge key={i} item={item} hideAssets={hideAssets} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* 모바일: flex-wrap 배지 (스크롤 없이 한눈에) */}
+        {/* 모바일: 주요지수(크게) + 보유종목(작게) */}
         {tickerItems.length > 0 && (
-          <div className="md:hidden mb-3 flex flex-wrap gap-1.5">
-            {tickerItems.map((item, i) => (
-              <Badge key={i} item={item} hideAssets={hideAssets} />
-            ))}
+          <div className="md:hidden mb-3 space-y-1.5">
+            {indexItems.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {indexItems.map((item, i) => (
+                  <Badge key={i} item={item} hideAssets={hideAssets} isIndex />
+                ))}
+              </div>
+            )}
+            {otherItems.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {otherItems.map((item, i) => (
+                  <Badge key={i} item={item} hideAssets={hideAssets} />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -188,6 +232,8 @@ export default function Header({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               <span className="text-[11px] text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
+              <span className="text-[11px] text-toss-text-tertiary/50">·</span>
+              <span className="text-[10px] text-toss-text-tertiary/70">{fmtAbsTime(data.price_updated_at)}</span>
               {data.market_status === 'closed' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
               )}
