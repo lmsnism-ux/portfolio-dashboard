@@ -5,7 +5,14 @@ import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime } from '../utils';
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
 function shortTickerName(name: string): string {
   const stripped = name.replace(ETF_BRAND_RE, '').trim();
-  return stripped.length > 9 ? stripped.slice(0, 9) + '…' : stripped;
+  return stripped.length > 11 ? stripped.slice(0, 11) + '…' : stripped;
+}
+
+function accCatOrder(type: string): number {
+  if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return 1;
+  if (/IRP|DC|퇴직|연금|연금저축/i.test(type)) return 2;
+  if (/적금|예금|저축/i.test(type)) return 3;
+  return 4;
 }
 
 interface Props {
@@ -90,11 +97,28 @@ export default function Header({
 
         {/* 총자산 + 종목 등락 (데스크탑: 우측 배지 패널) */}
         {(() => {
-          const tickerItems = data.accounts.flatMap(acc =>
-            acc.holdings
-              .filter(h => h.day_change_pct !== null)
-              .map(h => ({ name: h.name, pct: h.day_change_pct as number, krwChange: h.day_change_krw }))
-          ).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+          const tickerItems = (() => {
+            const seen = new Map<string, { name: string; pct: number; krwChange: number | null; catOrder: number }>();
+            data.accounts.forEach(acc => {
+              const catOrd = accCatOrder(acc.type);
+              acc.holdings
+                .filter(h => h.day_change_pct !== null && !/\bTDF\b/i.test(h.name))
+                .forEach(h => {
+                  const ex = seen.get(h.name);
+                  const pct = h.day_change_pct as number;
+                  if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
+                    seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd });
+                  }
+                });
+            });
+            return [...seen.values()].sort((a, b) => {
+              const aIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(a.name);
+              const bIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(b.name);
+              if (aIdx !== bIdx) return aIdx ? -1 : 1;
+              if (a.catOrder !== b.catOrder) return a.catOrder - b.catOrder;
+              return Math.abs(b.pct) - Math.abs(a.pct);
+            });
+          })();
 
           const Badge = ({ item, i }: { item: typeof tickerItems[0]; i: number }) => (
             <div

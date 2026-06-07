@@ -119,12 +119,20 @@ export default function App() {
         )}
 
         {/* 목표/자동매수 */}
-        <GoalCard
-          goalKrw={data.goal_krw}
-          currentKrw={data.total_value_krw}
-          progressPct={data.goal_progress_pct}
-          hideAssets={hideAssets}
-        />
+        {(() => {
+          const longTermKrw = data.accounts
+            .filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type))
+            .reduce((s, a) => s + a.value_krw, 0);
+          return (
+            <GoalCard
+              goalKrw={data.goal_krw}
+              currentKrw={data.total_value_krw}
+              progressPct={data.goal_progress_pct}
+              hideAssets={hideAssets}
+              longTermKrw={longTermKrw}
+            />
+          );
+        })()}
 
         <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
 

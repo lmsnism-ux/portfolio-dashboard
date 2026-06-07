@@ -9,12 +9,14 @@ interface Props {
   currentKrw: number;
   progressPct: number | null;
   hideAssets: boolean;
+  longTermKrw?: number;
 }
 
-export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets }: Props) {
+export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets, longTermKrw }: Props) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>(goalKrw ? (goalKrw / 10000).toString() : '');
+  const [excludeLongTerm, setExcludeLongTerm] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (krw: number) => patchGoal(krw),
@@ -30,30 +32,50 @@ export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets 
     mutation.mutate(Math.round(manwon * 10000));
   };
 
-  const remaining = goalKrw ? Math.max(0, goalKrw - currentKrw) : null;
-  const pct = progressPct ?? 0;
+  const investKrw = excludeLongTerm && longTermKrw ? currentKrw - longTermKrw : currentKrw;
+  const remaining = goalKrw ? Math.max(0, goalKrw - investKrw) : null;
+  const pct = goalKrw ? (investKrw / goalKrw) * 100 : (progressPct ?? 0);
   const clamped = Math.min(100, Math.max(0, pct));
   const isAchieved = pct >= 100;
 
   return (
     <section className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-7 h-7 rounded-full bg-toss-blue-soft flex items-center justify-center">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="w-7 h-7 rounded-full bg-toss-blue-soft flex items-center justify-center shrink-0">
           <Target size={15} className="text-toss-blue" />
         </div>
         <h3 className="text-sm font-semibold text-toss-text-primary">목표 자산</h3>
-        {!editing && (
-          <button
-            onClick={() => {
-              setDraft(goalKrw ? (goalKrw / 10000).toString() : '');
-              setEditing(true);
-            }}
-            className="ml-auto p-1.5 rounded-full hover:bg-toss-bg active:scale-95"
-            title="목표 수정"
-          >
-            <Pencil size={13} className="text-toss-text-tertiary" />
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {!editing && !!longTermKrw && (
+            <div className="flex bg-toss-bg border border-toss-border rounded-full p-0.5 gap-0.5">
+              {[false, true].map(excl => (
+                <button
+                  key={String(excl)}
+                  onClick={() => setExcludeLongTerm(excl)}
+                  className={`px-2 py-0.5 text-[10px] rounded-full transition-all font-medium whitespace-nowrap ${
+                    excludeLongTerm === excl
+                      ? 'bg-toss-blue text-white shadow-sm'
+                      : 'text-toss-text-tertiary hover:text-toss-text-secondary'
+                  }`}
+                >
+                  {excl ? '장기투자 제외' : '전체'}
+                </button>
+              ))}
+            </div>
+          )}
+          {!editing && (
+            <button
+              onClick={() => {
+                setDraft(goalKrw ? (goalKrw / 10000).toString() : '');
+                setEditing(true);
+              }}
+              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95"
+              title="목표 수정"
+            >
+              <Pencil size={13} className="text-toss-text-tertiary" />
+            </button>
+          )}
+        </div>
       </div>
 
       {editing ? (
@@ -98,7 +120,7 @@ export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets 
               {clamped.toFixed(1)}%
             </span>
             <span className="num text-xs text-toss-text-tertiary">
-              {hideAssets ? '••••' : fmtKRW(currentKrw)} /{' '}
+              {hideAssets ? '••••' : fmtKRW(investKrw)} /{' '}
               <span className="text-toss-text-secondary font-semibold">{fmtKRW(goalKrw)}</span>
             </span>
           </div>
@@ -126,6 +148,12 @@ export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets 
               </>
             )}
           </p>
+          {excludeLongTerm && longTermKrw && (
+            <p className="text-[10px] text-indigo-400 mt-1.5 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
+              연금 계좌 {hideAssets ? '••••' : fmtKRW(longTermKrw)} 제외됨
+            </p>
+          )}
         </>
       )}
     </section>

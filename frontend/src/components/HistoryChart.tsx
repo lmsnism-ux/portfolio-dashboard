@@ -176,17 +176,19 @@ export default function HistoryChart({ data, hideAssets }: Props) {
   // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시
   const useProfit = range === 'ALL';
   const contributors = useMemo(() => {
-    const holdings = data.accounts.flatMap(a => a.holdings);
-    if (useProfit) {
-      return holdings
-        .filter(h => h.profit_krw !== null && h.profit_krw !== 0)
-        .map(h => ({ name: h.name, changeKrw: h.profit_krw!, changePct: h.profit_pct }))
-        .sort((a, b) => Math.abs(b.changeKrw) - Math.abs(a.changeKrw))
-        .slice(0, 6);
-    }
-    return holdings
-      .filter(h => h.day_change_krw !== null && h.day_change_krw !== 0)
-      .map(h => ({ name: h.name, changeKrw: h.day_change_krw!, changePct: h.day_change_pct }))
+    const map = new Map<string, { name: string; changeKrw: number; changePct: number | null }>();
+    data.accounts.flatMap(a => a.holdings).forEach(h => {
+      const change = useProfit ? h.profit_krw : h.day_change_krw;
+      const pct = useProfit ? h.profit_pct : h.day_change_pct;
+      if (change === null || change === 0) return;
+      const ex = map.get(h.name);
+      if (ex) {
+        map.set(h.name, { name: h.name, changeKrw: ex.changeKrw + change, changePct: null });
+      } else {
+        map.set(h.name, { name: h.name, changeKrw: change, changePct: pct });
+      }
+    });
+    return [...map.values()]
       .sort((a, b) => Math.abs(b.changeKrw) - Math.abs(a.changeKrw))
       .slice(0, 6);
   }, [data.accounts, useProfit]);
