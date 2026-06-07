@@ -5,7 +5,7 @@
 # Railway 환경이면 uvicorn만 실행하고 종료
 if [ -n "$RAILWAY_ENVIRONMENT" ] || [ -n "$RAILWAY_PROJECT_ID" ]; then
   cd "$(dirname "$0")/backend"
-  exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
+  exec python -m uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
 fi
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
