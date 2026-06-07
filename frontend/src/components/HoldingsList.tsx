@@ -8,11 +8,12 @@ const HIDDEN_KEY = 'pd_hidden';
 const ORDER_KEY = 'pd_horder';
 const CAT_ORDER_KEY = 'pd_catorder';
 
-const DEFAULT_CATS = ['투자', '연금', '기타'];
+const DEFAULT_CATS = ['투자', '연금', '저축', '기타'];
 
 function topCat(type: string): string {
   if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return '투자';
   if (/IRP|DC|퇴직|연금|연금저축/i.test(type)) return '연금';
+  if (/적금|예금|저축/i.test(type)) return '저축';
   return '기타';
 }
 

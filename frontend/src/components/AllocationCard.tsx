@@ -12,6 +12,7 @@ type RiskLevel = '위험자산' | '혼합자산' | '안전자산';
 const RISK_MAP: Record<string, RiskLevel> = {
   '주식': '위험자산',
   '혼합(TDF)': '혼합자산',
+  'TDF·혼합형': '혼합자산',
   '혼합': '혼합자산',
   '채권': '안전자산',
   '예금': '안전자산',
@@ -19,11 +20,17 @@ const RISK_MAP: Record<string, RiskLevel> = {
   '현금성': '안전자산',
 };
 
-// 화면에 표시할 레이블 (혼합자산 표현 명확화)
-const RISK_DISPLAY: Record<RiskLevel, string> = {
-  '위험자산': '위험자산 (주식)',
-  '혼합자산': 'TDF·혼합형 (채권+주식 혼합 펀드)',
-  '안전자산': '안전자산 (예금·채권)',
+// 자산군 표시명 (혼합(TDF) → TDF·혼합형)
+const CLASS_DISPLAY: Record<string, string> = {
+  '혼합(TDF)': 'TDF·혼합형',
+  '혼합': 'TDF·혼합형',
+};
+
+// 위험자산 구성 표시 레이블
+const RISK_DISPLAY: Record<RiskLevel, { title: string; desc: string }> = {
+  '위험자산': { title: '위험자산', desc: '주식' },
+  '혼합자산': { title: 'TDF·혼합형', desc: '채권+주식 혼합' },
+  '안전자산': { title: '안전자산', desc: '예금·채권' },
 };
 
 const RISK_CONFIG: Record<RiskLevel, { color: string; bg: string; text: string }> = {
@@ -41,7 +48,7 @@ export default function AllocationCard({ data, hideAssets }: Props) {
     weight: a.weight,
   }));
   const classItems = data.asset_class_weights.map((c) => ({
-    name: c.name,
+    name: CLASS_DISPLAY[c.name] ?? c.name,
     value: c.value_krw,
     weight: c.weight,
   }));
@@ -71,7 +78,7 @@ export default function AllocationCard({ data, hideAssets }: Props) {
   return (
     <section className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <DonutChart data={accountItems} title="계좌별 비중" hideAssets={hideAssets} compact />
+        <DonutChart data={accountItems} title="계좌별 비중" hideAssets={hideAssets} compact showAll />
         <DonutChart data={classItems} title="자산군 비중" hideAssets={hideAssets} compact />
         <DonutChart data={regionItems} title="지역 비중" hideAssets={hideAssets} compact />
       </div>
@@ -105,11 +112,11 @@ export default function AllocationCard({ data, hideAssets }: Props) {
                     style={{ background: r.color }}
                   />
                   <span className={`text-[10px] font-semibold ${r.text}`}>
-                    {RISK_DISPLAY[r.label as RiskLevel].split(' ')[0]}
+                    {RISK_DISPLAY[r.label as RiskLevel].title}
                   </span>
                 </div>
                 <p className={`text-[9px] ${r.text} opacity-70 mb-0.5 leading-tight`}>
-                  {RISK_DISPLAY[r.label as RiskLevel].replace(/^[^ ]+ /, '')}
+                  {RISK_DISPLAY[r.label as RiskLevel].desc}
                 </p>
                 <p className={`num text-sm font-bold ${r.text}`}>{r.pct.toFixed(1)}%</p>
                 {!hideAssets && (

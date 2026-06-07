@@ -13,9 +13,10 @@ interface Props {
   title: string;
   hideAssets?: boolean;
   compact?: boolean;
+  showAll?: boolean;
 }
 
-export default function DonutChart({ data, title, hideAssets = false, compact = false }: Props) {
+export default function DonutChart({ data, title, hideAssets = false, compact = false, showAll = false }: Props) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const total = data.reduce((s, x) => s + x.value, 0);
   const active = activeIdx !== null ? data[activeIdx] : null;
@@ -23,7 +24,7 @@ export default function DonutChart({ data, title, hideAssets = false, compact = 
   const chartH = compact ? 148 : 200;
   const innerR = compact ? 42 : 62;
   const outerR = compact ? 62 : 88;
-  const maxLegend = compact ? 5 : 6;
+  const maxLegend = showAll ? data.length : (compact ? 5 : 6);
 
   return (
     <div className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] p-4">

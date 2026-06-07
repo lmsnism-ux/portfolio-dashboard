@@ -11,7 +11,6 @@ import HoldingsList from './components/HoldingsList';
 import EditHoldingModal from './components/EditHoldingModal';
 import AddHoldingModal from './components/AddHoldingModal';
 import TradeModal from './components/TradeModal';
-import TickerTape from './components/TickerTape';
 import { DashboardSkeleton } from './components/Skeletons';
 import type { AccountData, HoldingData } from './types';
 
@@ -96,7 +95,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
-      <TickerTape data={data} hideAssets={hideAssets} />
       <Header
         data={data}
         dark={dark}
