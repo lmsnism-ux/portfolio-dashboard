@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime } from '../utils';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
+
 function shortTickerName(name: string): string {
   const stripped = name.replace(ETF_BRAND_RE, '').trim();
   return stripped.length > 11 ? stripped.slice(0, 11) + '…' : stripped;
@@ -25,6 +27,26 @@ interface Props {
   isRefreshing: boolean;
 }
 
+type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number };
+
+function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
+  return (
+    <div
+      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] cursor-default shrink-0 ${
+        item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft'
+      }`}
+      title={`${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`}
+    >
+      <span className="text-toss-text-secondary whitespace-nowrap font-medium">
+        {shortTickerName(item.name)}
+      </span>
+      <span className={`num font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
+        {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
+      </span>
+    </div>
+  );
+}
+
 const MASK = '••••••';
 
 export default function Header({
@@ -36,12 +58,50 @@ export default function Header({
   onRefresh,
   isRefreshing,
 }: Props) {
-  const profitColor = colorClass(data.total_profit_krw);
-  const dayColor = colorClass(data.total_day_change_krw);
+  const [excludeLong, setExcludeLong] = useState(false);
+
+  const longTermAccs = data.accounts.filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type));
+  const longTermKrw      = longTermAccs.reduce((s, a) => s + a.value_krw, 0);
+  const longTermDayChg   = longTermAccs.reduce((s, a) => s + a.day_change_krw, 0);
+  const longTermProfit   = longTermAccs.reduce((s, a) => s + a.profit_krw, 0);
+  const longTermCost     = longTermAccs.reduce((s, a) => s + a.cost_krw, 0);
+
+  const displayTotal    = excludeLong ? data.total_value_krw   - longTermKrw    : data.total_value_krw;
+  const displayDayChg   = excludeLong ? data.total_day_change_krw - longTermDayChg : data.total_day_change_krw;
+  const displayProfit   = excludeLong ? data.total_profit_krw  - longTermProfit : data.total_profit_krw;
+  const investCost      = data.total_cost_krw - (excludeLong ? longTermCost : 0);
+  const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
+  const prevTotal        = displayTotal - displayDayChg;
+  const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
+
+  const profitColor = colorClass(displayProfit);
+  const dayColor    = colorClass(displayDayChg);
+
+  const tickerItems: TickerItem[] = (() => {
+    const seen = new Map<string, TickerItem>();
+    data.accounts.forEach(acc => {
+      const catOrd = accCatOrder(acc.type);
+      acc.holdings
+        .filter(h => h.day_change_pct !== null && !/\bTDF\b/i.test(h.name))
+        .forEach(h => {
+          const ex = seen.get(h.name);
+          const pct = h.day_change_pct as number;
+          if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
+            seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd });
+          }
+        });
+    });
+    return [...seen.values()].sort((a, b) => {
+      const aIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(a.name);
+      const bIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(b.name);
+      if (aIdx !== bIdx) return aIdx ? -1 : 1;
+      if (a.catOrder !== b.catOrder) return a.catOrder - b.catOrder;
+      return Math.abs(b.pct) - Math.abs(a.pct);
+    });
+  })();
 
   return (
     <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
-      {/* stale 경고 */}
       {data.cache_is_stale && (
         <div className="bg-toss-up-soft text-toss-up text-xs px-4 py-2 flex items-center gap-2">
           <AlertTriangle size={13} />
@@ -59,118 +119,69 @@ export default function Header({
             </span>
           </div>
           <div className="flex items-center gap-0.5">
-            <button
-              onClick={onToggleHide}
-              className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all"
-              title={hideAssets ? '자산 보기' : '자산 가리기'}
-            >
-              {hideAssets ? (
-                <EyeOff size={17} className="text-toss-text-secondary" />
-              ) : (
-                <Eye size={17} className="text-toss-text-secondary" />
-              )}
+            <button onClick={onToggleHide} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={hideAssets ? '자산 보기' : '자산 가리기'}>
+              {hideAssets ? <EyeOff size={17} className="text-toss-text-secondary" /> : <Eye size={17} className="text-toss-text-secondary" />}
             </button>
-            <button
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
-              title="가격 갱신"
-            >
-              <RefreshCw
-                size={17}
-                className={`text-toss-text-secondary ${isRefreshing ? 'animate-spin' : ''}`}
-              />
+            <button onClick={onRefresh} disabled={isRefreshing} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50" title="가격 갱신">
+              <RefreshCw size={17} className={`text-toss-text-secondary ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={onToggleDark}
-              className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all"
-              title={dark ? '라이트 모드' : '다크 모드'}
-            >
-              {dark ? (
-                <Sun size={17} className="text-amber-400" />
-              ) : (
-                <Moon size={17} className="text-toss-text-secondary" />
-              )}
+            <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={dark ? '라이트 모드' : '다크 모드'}>
+              {dark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-toss-text-secondary" />}
             </button>
           </div>
         </div>
 
-        {/* 총자산 + 종목 등락 (데스크탑: 우측 배지 패널) */}
-        {(() => {
-          const tickerItems = (() => {
-            const seen = new Map<string, { name: string; pct: number; krwChange: number | null; catOrder: number }>();
-            data.accounts.forEach(acc => {
-              const catOrd = accCatOrder(acc.type);
-              acc.holdings
-                .filter(h => h.day_change_pct !== null && !/\bTDF\b/i.test(h.name))
-                .forEach(h => {
-                  const ex = seen.get(h.name);
-                  const pct = h.day_change_pct as number;
-                  if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
-                    seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd });
-                  }
-                });
-            });
-            return [...seen.values()].sort((a, b) => {
-              const aIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(a.name);
-              const bIdx = /코스피|나스닥|kospi|nasdaq|s&p/i.test(b.name);
-              if (aIdx !== bIdx) return aIdx ? -1 : 1;
-              if (a.catOrder !== b.catOrder) return a.catOrder - b.catOrder;
-              return Math.abs(b.pct) - Math.abs(a.pct);
-            });
-          })();
-
-          const Badge = ({ item, i }: { item: typeof tickerItems[0]; i: number }) => (
-            <div
-              key={i}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] cursor-default shrink-0 ${
-                item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft'
-              }`}
-              title={`${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`}
-            >
-              <span className="text-toss-text-secondary whitespace-nowrap font-medium">
-                {shortTickerName(item.name)}
-              </span>
-              <span className={`num font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
-                {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
-              </span>
-            </div>
-          );
-
-          return (
-            <>
-              <div className="mb-4 flex items-start gap-5">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase mb-1.5">총 자산</p>
-                  <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
-                    {hideAssets ? MASK : fmtKRW(data.total_value_krw)}
-                  </h1>
-                  {!hideAssets && (
-                    <p className="num text-xs text-toss-text-tertiary mt-1.5">
-                      {fmtKRWFull(data.total_value_krw)}
-                    </p>
-                  )}
-                </div>
-                {tickerItems.length > 0 && (
-                  <div className="hidden md:block shrink-0 pt-1 max-w-[240px]">
-                    <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-                    <div className="flex flex-wrap gap-1">
-                      {tickerItems.map((item, i) => <Badge key={i} item={item} i={i} />)}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {/* 모바일: 총자산 아래 가로 스크롤 배지 */}
-              {tickerItems.length > 0 && (
-                <div className="md:hidden -mx-5 px-5 mb-3 overflow-x-auto">
-                  <div className="flex gap-1.5 w-max pb-1">
-                    {tickerItems.map((item, i) => <Badge key={i} item={item} i={i} />)}
-                  </div>
-                </div>
+        {/* 총자산 + 데스크탑 배지 */}
+        <div className="mb-3 flex items-start gap-5">
+          <div className="flex-1 min-w-0">
+            {/* 라벨 + 장기투자 제외 토글 */}
+            <div className="flex items-center gap-2 mb-1.5">
+              <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase">총 자산</p>
+              {longTermKrw > 0 && (
+                <button
+                  onClick={() => setExcludeLong(e => !e)}
+                  className={`text-[9px] px-2 py-0.5 rounded-full border font-medium transition-all ${
+                    excludeLong
+                      ? 'border-indigo-400/40 text-indigo-400 bg-indigo-500/10'
+                      : 'border-toss-border text-toss-text-tertiary hover:border-toss-text-tertiary'
+                  }`}
+                >
+                  {excludeLong ? '장기 제외' : '전체'}
+                </button>
               )}
-            </>
-          );
-        })()}
+            </div>
+            <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
+              {hideAssets ? MASK : fmtKRW(displayTotal)}
+            </h1>
+            {!hideAssets && (
+              <p className="num text-xs text-toss-text-tertiary mt-1.5 flex items-center gap-2">
+                {fmtKRWFull(displayTotal)}
+                {excludeLong && <span className="text-indigo-400 font-medium">· 연금 제외</span>}
+              </p>
+            )}
+          </div>
+
+          {/* 데스크탑: 우측 배지 패널 (flex-wrap) */}
+          {tickerItems.length > 0 && (
+            <div className="hidden md:block shrink-0 pt-1 max-w-[260px]">
+              <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
+              <div className="flex flex-wrap gap-1">
+                {tickerItems.map((item, i) => (
+                  <Badge key={i} item={item} hideAssets={hideAssets} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 모바일: flex-wrap 배지 (스크롤 없이 한눈에) */}
+        {tickerItems.length > 0 && (
+          <div className="md:hidden mb-3 flex flex-wrap gap-1.5">
+            {tickerItems.map((item, i) => (
+              <Badge key={i} item={item} hideAssets={hideAssets} />
+            ))}
+          </div>
+        )}
 
         {/* 오늘 등락 / 누적 수익 / 환율 */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -185,24 +196,22 @@ export default function Header({
               )}
             </div>
             <span className={`num text-sm font-bold ${dayColor}`}>
-              {hideAssets ? MASK : (data.total_day_change_krw >= 0 ? '+' : '') + fmtKRW(data.total_day_change_krw)}
+              {hideAssets ? MASK : (displayDayChg >= 0 ? '+' : '') + fmtKRW(displayDayChg)}
             </span>
             <span className={`num text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-              (data.total_day_change_pct ?? 0) >= 0
-                ? 'bg-toss-up-soft text-toss-up'
-                : 'bg-toss-down-soft text-toss-down'
+              displayDayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
             }`}>
-              {fmtPct(data.total_day_change_pct)}
+              {fmtPct(displayDayPct)}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-toss-text-tertiary">누적 수익</span>
             <span className={`num text-sm font-bold ${profitColor}`}>
-              {hideAssets ? MASK : (data.total_profit_krw >= 0 ? '+' : '') + fmtKRW(data.total_profit_krw)}
+              {hideAssets ? MASK : (displayProfit >= 0 ? '+' : '') + fmtKRW(displayProfit)}
             </span>
             <span className={`num text-xs font-semibold ${profitColor}`}>
-              {fmtPct(data.total_profit_pct)}
+              {fmtPct(displayProfitPct)}
             </span>
           </div>
 
