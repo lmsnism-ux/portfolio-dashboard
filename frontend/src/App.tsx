@@ -96,7 +96,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
-      <TickerTape data={data} />
+      <TickerTape data={data} hideAssets={hideAssets} />
       <Header
         data={data}
         dark={dark}

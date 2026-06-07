@@ -11,8 +11,8 @@ const CAT_ORDER_KEY = 'pd_catorder';
 const DEFAULT_CATS = ['투자', '연금', '기타'];
 
 function topCat(type: string): string {
-  if (/주식|ISA|CMA/i.test(type)) return '투자';
-  if (/IRP|DC|퇴직|연금/i.test(type)) return '연금';
+  if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return '투자';
+  if (/IRP|DC|퇴직|연금|연금저축/i.test(type)) return '연금';
   return '기타';
 }
 
@@ -233,8 +233,13 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
             >
               {/* 카테고리 헤더 */}
               <div className="flex items-center justify-between px-4 py-4 border-b border-toss-border/60">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
+                  {cat === '연금' && !editMode && (
+                    <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      장기투자 · 55세 이후 수령
+                    </span>
+                  )}
                   {/* 편집 모드: 카테고리 순서 변경 */}
                   {editMode && (
                     <div className="flex items-center gap-0.5">

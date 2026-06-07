@@ -19,6 +19,13 @@ const RISK_MAP: Record<string, RiskLevel> = {
   '현금성': '안전자산',
 };
 
+// 화면에 표시할 레이블 (혼합자산 표현 명확화)
+const RISK_DISPLAY: Record<RiskLevel, string> = {
+  '위험자산': '위험자산 (주식)',
+  '혼합자산': 'TDF·혼합형 (채권+주식 혼합 펀드)',
+  '안전자산': '안전자산 (예금·채권)',
+};
+
 const RISK_CONFIG: Record<RiskLevel, { color: string; bg: string; text: string }> = {
   '위험자산': { color: '#F04452', bg: 'bg-toss-up-soft', text: 'text-toss-up' },
   '혼합자산': { color: '#F5A623', bg: 'bg-amber-500/10', text: 'text-amber-400' },
@@ -97,8 +104,13 @@ export default function AllocationCard({ data, hideAssets }: Props) {
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: r.color }}
                   />
-                  <span className={`text-[10px] font-semibold ${r.text}`}>{r.label}</span>
+                  <span className={`text-[10px] font-semibold ${r.text}`}>
+                    {RISK_DISPLAY[r.label as RiskLevel].split(' ')[0]}
+                  </span>
                 </div>
+                <p className={`text-[9px] ${r.text} opacity-70 mb-0.5 leading-tight`}>
+                  {RISK_DISPLAY[r.label as RiskLevel].replace(/^[^ ]+ /, '')}
+                </p>
                 <p className={`num text-sm font-bold ${r.text}`}>{r.pct.toFixed(1)}%</p>
                 {!hideAssets && (
                   <p className={`num text-[10px] mt-0.5 ${r.text} opacity-70`}>

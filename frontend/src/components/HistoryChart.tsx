@@ -1,14 +1,16 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, CalendarDays } from 'lucide-react';
 import { fetchHistory, triggerBackfill } from '../api';
 import { fmtKRW, fmtPct, colorClass } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
+type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
 
 const RANGES: { key: Range; label: string; days: number }[] = [
+  { key: 'CM', label: '당월', days: 0 },
+  { key: 'PM', label: '전월', days: 0 },
   { key: '1M', label: '1개월', days: 31 },
   { key: '3M', label: '3개월', days: 92 },
   { key: '6M', label: '6개월', days: 183 },
@@ -66,8 +68,34 @@ const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
   </div>
 );
 
+function getRangeCutoff(key: Range, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
+  const now = new Date();
+  if (key === 'CM') {
+    return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: null };
+  }
+  if (key === 'PM') {
+    return {
+      from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      to: new Date(now.getFullYear(), now.getMonth(), 0),
+    };
+  }
+  if (key === 'CUSTOM') {
+    return {
+      from: customFrom ? new Date(customFrom) : null,
+      to: customTo ? new Date(customTo) : null,
+    };
+  }
+  if (key === 'ALL') return { from: null, to: null };
+  if (key === 'YTD') return { from: new Date(now.getFullYear(), 0, 1), to: null };
+  const r = RANGES.find(x => x.key === key)!;
+  return { from: new Date(now.getTime() - r.days * 86400000), to: null };
+}
+
 export default function HistoryChart({ data, hideAssets }: Props) {
   const [range, setRange] = useState<Range>('1M');
+  const [showCustom, setShowCustom] = useState(false);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const queryClient = useQueryClient();
 
   const { data: items, isLoading } = useQuery({
@@ -81,42 +109,31 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['history'] }),
   });
 
-  // 각 탭에 얼마나 데이터가 있는지 계산
-  // 'full' = 선택 기간 전체에 데이터 있음, 'partial' = 일부, 'no-extra' = 범위가 전체 보유 데이터를 초과함
   const tabDataStatus = useMemo(() => {
-    const result: Record<string, 'full' | 'partial' | 'no-extra'> = {};
+    const result: Record<string, 'full' | 'no-extra'> = {};
     if (!items?.length) {
       RANGES.forEach(r => { result[r.key] = 'no-extra'; });
       return result;
     }
     const earliest = items[0].date;
     RANGES.forEach(r => {
-      if (r.key === 'ALL') { result[r.key] = 'full'; return; }
-      const now = new Date();
-      let cutoff: Date;
-      if (r.key === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
-      else cutoff = new Date(now.getTime() - r.days * 86400000);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
-      if (earliest <= cutoffStr) result[r.key] = 'full';
-      else result[r.key] = 'no-extra';
+      if (r.key === 'ALL' || r.key === 'CUSTOM') { result[r.key] = 'full'; return; }
+      const { from } = getRangeCutoff(r.key, '', '');
+      if (!from) { result[r.key] = 'full'; return; }
+      const cutoffStr = from.toISOString().slice(0, 10);
+      result[r.key] = earliest <= cutoffStr ? 'full' : 'no-extra';
     });
     return result;
   }, [items]);
 
   const filtered = useMemo(() => {
     if (!items) return [];
-    if (range === 'ALL') return items;
-    const now = new Date();
-    let cutoff: Date;
-    if (range === 'YTD') {
-      cutoff = new Date(now.getFullYear(), 0, 1);
-    } else {
-      const r = RANGES.find((x) => x.key === range)!;
-      cutoff = new Date(now.getTime() - r.days * 86400000);
-    }
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    return items.filter((p) => p.date >= cutoffStr);
-  }, [items, range]);
+    const { from, to } = getRangeCutoff(range, customFrom, customTo);
+    if (!from) return items;
+    const fromStr = from.toISOString().slice(0, 10);
+    const toStr = to ? to.toISOString().slice(0, 10) : '9999-99-99';
+    return items.filter(p => p.date >= fromStr && p.date <= toStr);
+  }, [items, range, customFrom, customTo]);
 
   const [first, last] = useMemo(() => {
     if (!filtered.length) return [null, null] as const;
@@ -139,24 +156,36 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     const yearStartStr = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
     const lastPoint = items[items.length - 1];
 
-    const beforeMonth = items.filter((p) => p.date < monthStartStr);
+    const beforeMonth = items.filter(p => p.date < monthStartStr);
     const monthBase = beforeMonth[beforeMonth.length - 1] ?? items[0];
 
-    const beforeYear = items.filter((p) => p.date < yearStartStr);
+    const beforeYear = items.filter(p => p.date < yearStartStr);
     const yearBase = beforeYear[beforeYear.length - 1] ?? items[0];
 
     const monthDiff = lastPoint.total_value_krw - monthBase.total_value_krw;
-    const monthPct = monthBase.total_value_krw
-      ? (monthDiff / monthBase.total_value_krw) * 100
-      : null;
+    const monthPct = monthBase.total_value_krw ? (monthDiff / monthBase.total_value_krw) * 100 : null;
 
     const yearDiff = lastPoint.total_value_krw - yearBase.total_value_krw;
-    const yearPct = yearBase.total_value_krw
-      ? (yearDiff / yearBase.total_value_krw) * 100
-      : null;
+    const yearPct = yearBase.total_value_krw ? (yearDiff / yearBase.total_value_krw) * 100 : null;
 
     return { monthDiff, monthPct, yearDiff, yearPct };
   }, [items]);
+
+  // 오늘 기여 종목 (day_change_krw 기준, 절대값 큰 순)
+  const contributors = useMemo(() => {
+    return data.accounts
+      .flatMap(a => a.holdings)
+      .filter(h => h.day_change_krw !== null && h.day_change_krw !== 0)
+      .map(h => ({
+        name: h.name,
+        day_change_krw: h.day_change_krw!,
+        day_change_pct: h.day_change_pct,
+        profit_krw: h.profit_krw,
+        profit_pct: h.profit_pct,
+      }))
+      .sort((a, b) => Math.abs(b.day_change_krw) - Math.abs(a.day_change_krw))
+      .slice(0, 6);
+  }, [data.accounts]);
 
   const availableDays = items?.length ?? 0;
 
@@ -168,30 +197,10 @@ export default function HistoryChart({ data, hideAssets }: Props) {
           투자 수익 확인
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <MiniStat
-            label="오늘"
-            diff={data.total_day_change_krw}
-            pct={data.total_day_change_pct}
-            hideAssets={hideAssets}
-          />
-          <MiniStat
-            label="이번달"
-            diff={profitStats?.monthDiff ?? null}
-            pct={profitStats?.monthPct ?? null}
-            hideAssets={hideAssets}
-          />
-          <MiniStat
-            label="올해"
-            diff={profitStats?.yearDiff ?? null}
-            pct={profitStats?.yearPct ?? null}
-            hideAssets={hideAssets}
-          />
-          <MiniStat
-            label="누적 수익"
-            diff={data.total_profit_krw}
-            pct={data.total_profit_pct}
-            hideAssets={hideAssets}
-          />
+          <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
+          <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
+          <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
+          <MiniStat label="누적 수익" diff={data.total_profit_krw} pct={data.total_profit_pct} hideAssets={hideAssets} />
         </div>
       </div>
 
@@ -208,20 +217,14 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                   {periodChange.diff >= 0 ? '+' : ''}
                   {hideAssets ? '••••••' : fmtKRW(periodChange.diff)}
                 </span>
-                <span
-                  className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
-                    periodChange.diff >= 0
-                      ? 'bg-toss-up-soft text-toss-up'
-                      : 'bg-toss-down-soft text-toss-down'
-                  }`}
-                >
+                <span className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
+                  periodChange.diff >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
+                }`}>
                   {fmtPct(periodChange.pct)}
                 </span>
               </div>
             ) : last ? (
-              <p className="num text-sm text-toss-text-tertiary">
-                현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}
-              </p>
+              <p className="num text-sm text-toss-text-tertiary">현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}</p>
             ) : null}
             {first && last && (
               <p className="text-[10px] text-toss-text-tertiary mt-1">
@@ -230,21 +233,18 @@ export default function HistoryChart({ data, hideAssets }: Props) {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={() => backfillMutation.mutate()}
               disabled={backfillMutation.isPending}
               className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
               title="과거 30일 다시 계산"
             >
-              <RotateCcw
-                size={14}
-                className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`}
-              />
+              <RotateCcw size={14} className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* 기간 탭 — 데이터가 부족한 탭은 dim 처리 */}
-            <div className="flex bg-toss-bg rounded-full p-0.5 gap-0.5">
+            {/* 기간 탭 */}
+            <div className="flex bg-toss-bg rounded-full p-0.5 gap-0.5 flex-wrap">
               {RANGES.map((r) => {
                 const st = tabDataStatus[r.key] ?? 'no-extra';
                 const isActive = range === r.key;
@@ -252,7 +252,10 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 return (
                   <button
                     key={r.key}
-                    onClick={() => setRange(r.key)}
+                    onClick={() => {
+                      setRange(r.key);
+                      if (r.key !== 'CUSTOM') setShowCustom(false);
+                    }}
                     className={`relative px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
                       isActive
                         ? 'bg-toss-blue text-white shadow-sm'
@@ -262,18 +265,48 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                     }`}
                   >
                     {r.label}
-                    {/* 데이터 부족 탭에 작은 점 표시 */}
                     {!hasData && !isActive && r.key !== 'ALL' && (
                       <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full" />
                     )}
                   </button>
                 );
               })}
+              {/* 직접 기간 설정 버튼 */}
+              <button
+                onClick={() => { setRange('CUSTOM'); setShowCustom(true); }}
+                className={`relative px-2.5 py-1 text-[11px] rounded-full transition-all font-medium flex items-center gap-1 ${
+                  range === 'CUSTOM'
+                    ? 'bg-toss-blue text-white shadow-sm'
+                    : 'text-toss-text-secondary hover:text-toss-text-primary'
+                }`}
+              >
+                <CalendarDays size={10} />
+                직접
+              </button>
             </div>
           </div>
         </div>
 
-        {/* 데이터 부족 안내 — 선택한 기간보다 보유 데이터가 적을 때 */}
+        {/* 직접 기간 입력 */}
+        {showCustom && (
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={e => setCustomFrom(e.target.value)}
+              className="text-[11px] bg-toss-bg border border-toss-border rounded-lg px-2 py-1.5 text-toss-text-primary focus:outline-none focus:border-toss-blue"
+            />
+            <span className="text-[11px] text-toss-text-tertiary">~</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={e => setCustomTo(e.target.value)}
+              className="text-[11px] bg-toss-bg border border-toss-border rounded-lg px-2 py-1.5 text-toss-text-primary focus:outline-none focus:border-toss-blue"
+            />
+          </div>
+        )}
+
+        {/* 데이터 부족 안내 */}
         {dataShortfall && availableDays > 0 && (
           <div className="mb-3 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
             <p className="text-[11px] text-amber-400 leading-relaxed">
@@ -314,16 +347,11 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                     <stop offset="100%" stopColor="#5B9CF6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid
-                  stroke="var(--color-toss-border)"
-                  strokeDasharray="4 4"
-                  vertical={false}
-                  strokeOpacity={0.6}
-                />
+                <CartesianGrid stroke="var(--color-toss-border)" strokeDasharray="4 4" vertical={false} strokeOpacity={0.6} />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                  tickFormatter={(v) => v.slice(5)}
+                  tickFormatter={v => v.slice(5)}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={32}
@@ -331,7 +359,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 <YAxis
                   hide={hideAssets}
                   tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                  tickFormatter={(v) => {
+                  tickFormatter={v => {
                     const abs = Math.abs(v);
                     if (abs >= 1_0000_0000) return `${(v / 1_0000_0000).toFixed(1)}억`;
                     return `${Math.round(v / 10000)}만`;
@@ -355,6 +383,35 @@ export default function HistoryChart({ data, hideAssets }: Props) {
             </ResponsiveContainer>
           )}
         </div>
+
+        {/* 오늘 수익 기여 종목 */}
+        {contributors.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-toss-border/50">
+            <p className="text-[10px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-2.5">
+              오늘 수익 기여 종목
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {contributors.map((c, i) => (
+                <div key={i} className="flex items-center gap-2 bg-toss-bg rounded-xl px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-toss-text-secondary truncate">{c.name}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`num text-[12px] font-bold ${colorClass(c.day_change_krw)}`}>
+                      {c.day_change_krw >= 0 ? '+' : ''}
+                      {hideAssets ? '••••' : fmtKRW(c.day_change_krw)}
+                    </p>
+                    {c.day_change_pct !== null && (
+                      <p className={`num text-[10px] ${colorClass(c.day_change_pct)}`}>
+                        ({c.day_change_pct >= 0 ? '+' : ''}{c.day_change_pct.toFixed(2)}%)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
