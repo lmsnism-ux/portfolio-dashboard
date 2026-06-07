@@ -101,6 +101,16 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     return [filtered[0], filtered[filtered.length - 1]] as const;
   }, [filtered]);
 
+  // 선택한 기간보다 보유 데이터가 적은지 체크
+  const dataShortfall = useMemo(() => {
+    if (!items || !items.length || range === 'ALL') return false;
+    const now = new Date();
+    let cutoff: Date;
+    if (range === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
+    else cutoff = new Date(now.getTime() - RANGES.find((r) => r.key === range)!.days * 86400000);
+    return (items[0]?.date ?? '') > cutoff.toISOString().slice(0, 10);
+  }, [items, range]);
+
   const periodChange = useMemo(() => {
     if (!first || !last || first === last) return null;
     const diff = last.total_value_krw - first.total_value_krw;
@@ -109,27 +119,29 @@ export default function HistoryChart({ data, hideAssets }: Props) {
   }, [first, last]);
 
   const profitStats = useMemo(() => {
-    if (!items || !items.length) return null;
+    if (!items || items.length < 2) return null;
     const now = new Date();
     const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const yearStartStr = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
     const lastPoint = items[items.length - 1];
 
     const beforeMonth = items.filter((p) => p.date < monthStartStr);
-    const monthBase = beforeMonth[beforeMonth.length - 1] ?? null;
+    // fallback: if no data before month start, use earliest available
+    const monthBase = beforeMonth[beforeMonth.length - 1] ?? items[0];
 
     const beforeYear = items.filter((p) => p.date < yearStartStr);
-    const yearBase = beforeYear[beforeYear.length - 1] ?? null;
+    // fallback: if no data before year start, use earliest available
+    const yearBase = beforeYear[beforeYear.length - 1] ?? items[0];
 
-    const monthDiff = monthBase ? lastPoint.total_value_krw - monthBase.total_value_krw : null;
-    const monthPct =
-      monthBase && monthBase.total_value_krw
-        ? (monthDiff! / monthBase.total_value_krw) * 100
-        : null;
+    const monthDiff = lastPoint.total_value_krw - monthBase.total_value_krw;
+    const monthPct = monthBase.total_value_krw
+      ? (monthDiff / monthBase.total_value_krw) * 100
+      : null;
 
-    const yearDiff = yearBase ? lastPoint.total_value_krw - yearBase.total_value_krw : null;
-    const yearPct =
-      yearBase && yearBase.total_value_krw ? (yearDiff! / yearBase.total_value_krw) * 100 : null;
+    const yearDiff = lastPoint.total_value_krw - yearBase.total_value_krw;
+    const yearPct = yearBase.total_value_krw
+      ? (yearDiff / yearBase.total_value_krw) * 100
+      : null;
 
     return { monthDiff, monthPct, yearDiff, yearPct };
   }, [items]);
@@ -198,9 +210,11 @@ export default function HistoryChart({ data, hideAssets }: Props) {
               </p>
             ) : null}
             {first && last && first !== last && (
-              <p className="text-[10px] text-toss-text-tertiary mt-1">
-                {first.date.slice(5)} ~ {last.date.slice(5)}
-                {' '}({filtered.length}일)
+              <p className="text-[10px] text-toss-text-tertiary mt-1 flex items-center gap-1.5">
+                <span>{first.date.slice(5)} ~ {last.date.slice(5)} ({filtered.length}일)</span>
+                {dataShortfall && (
+                  <span className="text-amber-400">· 데이터 {filtered.length}일 보유</span>
+                )}
               </p>
             )}
           </div>

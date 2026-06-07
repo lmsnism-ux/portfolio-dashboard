@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
-import AccountTable from './components/AccountTable';
 import AutoBuyCard from './components/AutoBuyCard';
 import HistoryChart from './components/HistoryChart';
 import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
 import HoldingsBar from './components/HoldingsBar';
+import HoldingsList from './components/HoldingsList';
 import EditHoldingModal from './components/EditHoldingModal';
 import AddHoldingModal from './components/AddHoldingModal';
 import { DashboardSkeleton } from './components/Skeletons';
@@ -125,24 +125,14 @@ export default function App() {
 
         {data.auto_buy_items?.length > 0 && <AutoBuyCard items={data.auto_buy_items} />}
 
-        {/* 계좌별 상세 */}
-        <div className="space-y-3">
-          <h2 className="text-sm font-bold text-toss-text-secondary px-1">계좌별 상세</h2>
-          {data.accounts.map((account, i) => (
-            <AccountTable
-              key={account.name}
-              account={account}
-              hideAssets={hideAssets}
-              defaultOpen={i === 0}
-              canMoveUp={i > 0}
-              canMoveDown={i < data.accounts.length - 1}
-              onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
-              onAdd={(acc) => setAdding(acc)}
-              onMoveUp={() => moveAccount(i, -1)}
-              onMoveDown={() => moveAccount(i, 1)}
-            />
-          ))}
-        </div>
+        {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
+        <HoldingsList
+          data={data}
+          hideAssets={hideAssets}
+          onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
+          onAdd={(acc) => setAdding(acc)}
+          onMoveAccount={moveAccount}
+        />
 
         <div className="h-4" />
       </main>
