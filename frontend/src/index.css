@@ -31,15 +31,16 @@
 
 /* 다크 모드 */
 .dark {
-  --color-toss-bg: #17171C;
-  --color-toss-card: #1F1F25;
-  --color-toss-border: #2A2A33;
-  --color-toss-text-primary: #F2F4F6;
-  --color-toss-text-secondary: #B0B8C1;
-  --color-toss-text-tertiary: #6B7684;
-  --color-toss-blue-soft: rgba(49, 130, 246, 0.15);
-  --color-toss-up-soft: rgba(240, 68, 82, 0.15);
-  --color-toss-down-soft: rgba(49, 130, 246, 0.15);
+  --color-toss-bg: #0F1017;
+  --color-toss-card: #181926;
+  --color-toss-border: #252638;
+  --color-toss-text-primary: #EEEEF6;
+  --color-toss-text-secondary: #9090B0;
+  --color-toss-text-tertiary: #55556A;
+  --color-toss-blue: #5B9CF6;
+  --color-toss-blue-soft: rgba(91, 156, 246, 0.15);
+  --color-toss-up-soft: rgba(240, 68, 82, 0.12);
+  --color-toss-down-soft: rgba(91, 156, 246, 0.12);
 }
 
 html, body {

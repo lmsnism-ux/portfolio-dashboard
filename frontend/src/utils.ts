@@ -34,8 +34,9 @@ export function bgColorClass(val: number | null | undefined): string {
 }
 
 const CHART_COLORS = [
-  '#3182F6', '#5B8DEF', '#0064FF', '#7AC0FF', '#0058CA',
-  '#9CB3F0', '#1656C0', '#56A8FF', '#2563EB', '#1E3A8A',
+  '#5B9CF6', '#F5A623', '#1BC47D', '#E96AFF', '#FF6B6B',
+  '#FFD93D', '#4FC3F7', '#FF9F43', '#A29BFE', '#FD79A8',
+  '#00CEC9', '#6C5CE7', '#55EFC4', '#FDCB6E', '#E17055',
 ];
 
 export function chartColor(index: number): string {

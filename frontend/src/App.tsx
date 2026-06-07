@@ -7,10 +7,10 @@ import AutoBuyCard from './components/AutoBuyCard';
 import HistoryChart from './components/HistoryChart';
 import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
+import HoldingsBar from './components/HoldingsBar';
 import EditHoldingModal from './components/EditHoldingModal';
 import AddHoldingModal from './components/AddHoldingModal';
 import { DashboardSkeleton } from './components/Skeletons';
-import { fmtKRW } from './utils';
 import type { AccountData, HoldingData } from './types';
 
 const HIDE_KEY = 'pd_hide_assets';
@@ -20,7 +20,7 @@ export default function App() {
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem(DARK_KEY);
     if (saved !== null) return saved === '1';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return true; // 다크 모드 기본값
   });
   const [hideAssets, setHideAssets] = useState(
     () => localStorage.getItem(HIDE_KEY) === '1',
@@ -104,8 +104,18 @@ export default function App() {
       />
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-4">
+        {/* 도넛 차트 3개 나란히 */}
+        <AllocationCard data={data} hideAssets={hideAssets} />
+
+        {/* 종목별 비중 바 차트 */}
+        {data.top_holdings?.length > 0 && (
+          <HoldingsBar data={data} hideAssets={hideAssets} />
+        )}
+
+        {/* 자산 추이 차트 */}
         <HistoryChart hideAssets={hideAssets} />
 
+        {/* 목표/자동매수 */}
         <GoalCard
           goalKrw={data.goal_krw}
           currentKrw={data.total_value_krw}
@@ -115,25 +125,7 @@ export default function App() {
 
         {data.auto_buy_items?.length > 0 && <AutoBuyCard items={data.auto_buy_items} />}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {data.account_weights.map((a, i) => (
-            <div
-              key={i}
-              className="bg-toss-card rounded-[var(--radius-toss)] border border-toss-border shadow-[var(--shadow-toss-card)] p-3"
-            >
-              <p className="text-[11px] text-toss-text-tertiary truncate">{a.name}</p>
-              <p className="num font-bold text-toss-text-primary text-sm mt-1">
-                {hideAssets ? '••••' : fmtKRW(a.value_krw)}
-              </p>
-              <p className="num text-[11px] text-toss-blue font-semibold mt-0.5">
-                {a.weight.toFixed(1)}%
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <AllocationCard data={data} hideAssets={hideAssets} />
-
+        {/* 계좌별 상세 */}
         <div className="space-y-3">
           <h2 className="text-sm font-bold text-toss-text-secondary px-1">계좌별 상세</h2>
           {data.accounts.map((account, i) => (
