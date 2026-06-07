@@ -10,6 +10,8 @@ import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import EditHoldingModal from './components/EditHoldingModal';
 import AddHoldingModal from './components/AddHoldingModal';
+import TradeModal from './components/TradeModal';
+import TickerTape from './components/TickerTape';
 import { DashboardSkeleton } from './components/Skeletons';
 import type { AccountData, HoldingData } from './types';
 
@@ -29,6 +31,7 @@ export default function App() {
     null,
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
+  const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData } | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -93,6 +96,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
+      <TickerTape data={data} />
       <Header
         data={data}
         dark={dark}
@@ -131,6 +135,7 @@ export default function App() {
           hideAssets={hideAssets}
           onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
           onAdd={(acc) => setAdding(acc)}
+          onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
           onMoveAccount={moveAccount}
         />
 
@@ -145,6 +150,13 @@ export default function App() {
         />
       )}
       {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
+      {trading && (
+        <TradeModal
+          account={trading.account}
+          holding={trading.holding}
+          onClose={() => setTrading(null)}
+        />
+      )}
     </div>
   );
 }

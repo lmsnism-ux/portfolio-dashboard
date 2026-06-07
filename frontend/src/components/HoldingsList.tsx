@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react';
-import { Pencil, Plus, ChevronUp, ChevronDown } from 'lucide-react';
+import { Pencil, Plus, ChevronUp, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { chartColor, fmtKRW, fmtPct, colorClass } from '../utils';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 import IrpMonitor from './IrpMonitor';
 
 const HIDDEN_KEY = 'pd_hidden';
 const ORDER_KEY = 'pd_horder';
+const CAT_ORDER_KEY = 'pd_catorder';
+
+const DEFAULT_CATS = ['투자', '연금', '기타'];
 
 function topCat(type: string): string {
   if (/주식|ISA|CMA/i.test(type)) return '투자';
@@ -13,15 +16,37 @@ function topCat(type: string): string {
   return '기타';
 }
 
-// Colored avatar circle with 1-2 char abbreviation
+// 증권사 약칭 추출 (계좌명 앞 2글자)
+function brokerAbbr(accName: string): string {
+  const korean = accName.replace(/[^가-힣]/g, '').slice(0, 2);
+  if (korean) return korean;
+  return accName.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || '??';
+}
+
+// 아바타 — 한글 이름 우선, 영문 티커 fallback
 function Avatar({ name, ticker, color }: { name: string; ticker: string | null; color: string }) {
-  const text = ((ticker || name).replace(/[^A-Za-z가-힣]/g, '').slice(0, 2) || '?').toUpperCase();
+  const korean = name.replace(/[^가-힣]/g, '').slice(0, 2);
+  const text = korean
+    || ((ticker || name).replace(/[^A-Za-z]/g, '').slice(0, 2) || '?').toUpperCase();
   return (
     <div
       className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
       style={{ background: color }}
     >
       {text}
+    </div>
+  );
+}
+
+// 증권사 뱃지 아이콘
+function BrokerBadge({ accName, color }: { accName: string; color: string }) {
+  return (
+    <div
+      className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white"
+      style={{ background: color }}
+      title={accName}
+    >
+      {brokerAbbr(accName)}
     </div>
   );
 }
@@ -49,10 +74,11 @@ interface Props {
   hideAssets: boolean;
   onEdit: (account: AccountData, holding: HoldingData) => void;
   onAdd: (account: AccountData) => void;
+  onTrade: (account: AccountData, holding: HoldingData) => void;
   onMoveAccount: (idx: number, dir: -1 | 1) => void;
 }
 
-export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAccount }: Props) {
+export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount }: Props) {
   const [editMode, setEditMode] = useState(false);
 
   const [hidden, setHidden] = useState<Set<string>>(() => {
@@ -65,21 +91,33 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
     catch { return {}; }
   });
 
-  // draft state for edit mode (uncommitted until save)
+  const [catOrder, setCatOrder] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CAT_ORDER_KEY) || 'null');
+      return saved ?? [...DEFAULT_CATS];
+    }
+    catch { return [...DEFAULT_CATS]; }
+  });
+
+  // draft state — 저장 버튼 누를 때까지 반영 안 됨
   const [draftHidden, setDraftHidden] = useState<Set<string>>(new Set());
   const [draftOrder, setDraftOrder] = useState<Record<string, string[]>>({});
+  const [draftCatOrder, setDraftCatOrder] = useState<string[]>([...DEFAULT_CATS]);
 
   const enterEdit = () => {
     setDraftHidden(new Set(hidden));
     setDraftOrder({ ...order });
+    setDraftCatOrder([...catOrder]);
     setEditMode(true);
   };
 
   const save = () => {
     setHidden(new Set(draftHidden));
     setOrder({ ...draftOrder });
+    setCatOrder([...draftCatOrder]);
     localStorage.setItem(HIDDEN_KEY, JSON.stringify([...draftHidden]));
     localStorage.setItem(ORDER_KEY, JSON.stringify(draftOrder));
+    localStorage.setItem(CAT_ORDER_KEY, JSON.stringify(draftCatOrder));
     setEditMode(false);
   };
 
@@ -102,19 +140,26 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
     setDraftOrder(prev => ({ ...prev, [accountName]: newKeys }));
   };
 
-  // stable color per holding
-  const colorMap = useMemo(() => {
+  const moveCat = (idx: number, dir: -1 | 1) => {
+    setDraftCatOrder(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  // 계좌별 색상 (같은 계좌 내 종목은 동일 색상)
+  const brokerColorMap = useMemo(() => {
     const map: Record<string, string> = {};
-    let idx = 0;
-    data.accounts.forEach(acc => {
-      acc.holdings.forEach(h => {
-        map[`${acc.name}::${h.ticker || h.name}`] = chartColor(idx++);
-      });
+    data.accounts.forEach((acc, i) => {
+      map[acc.name] = chartColor(i);
     });
     return map;
   }, [data.accounts]);
 
-  // apply order to account holdings
+  // 계좌 내 종목 순서 적용
   const getHoldings = (acc: AccountData, ord: Record<string, string[]>): HoldingData[] => {
     const keys = ord[acc.name];
     if (!keys) return acc.holdings;
@@ -127,24 +172,25 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
     return sorted;
   };
 
-  // group accounts by top-level category
+  // 카테고리별 그룹 (catOrder 반영)
   const grouped = useMemo(() => {
+    const activeCatOrder = editMode ? draftCatOrder : catOrder;
     const map: Record<string, AccountData[]> = {};
     data.accounts.forEach(acc => {
       const cat = topCat(acc.type);
       (map[cat] ??= []).push(acc);
     });
-    return (['투자', '연금', '기타'] as const)
+    return activeCatOrder
       .filter(c => map[c])
-      .map(c => ({ cat: c, accounts: map[c] }));
-  }, [data.accounts]);
+      .map((c, idx) => ({ cat: c, accounts: map[c], idx }));
+  }, [data.accounts, editMode, draftCatOrder, catOrder]);
 
   const activeHidden = editMode ? draftHidden : hidden;
   const activeOrder = editMode ? draftOrder : order;
 
   return (
     <section>
-      {/* Section header */}
+      {/* 섹션 헤더 */}
       <div className="flex items-center justify-between px-1 mb-3">
         <h2 className="text-sm font-bold text-toss-text-secondary">보유 종목</h2>
         <div className="flex items-center gap-2">
@@ -176,7 +222,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
       </div>
 
       <div className="space-y-3">
-        {grouped.map(({ cat, accounts }) => {
+        {grouped.map(({ cat, accounts, idx: catIdx }) => {
           const catTotal = accounts.reduce((s, a) => s + a.value_krw, 0);
           const catDay = accounts.reduce((s, a) => s + a.day_change_krw, 0);
 
@@ -185,9 +231,32 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
               key={cat}
               className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden"
             >
-              {/* Category header */}
+              {/* 카테고리 헤더 */}
               <div className="flex items-center justify-between px-4 py-4 border-b border-toss-border/60">
-                <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
+                  {/* 편집 모드: 카테고리 순서 변경 */}
+                  {editMode && (
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => moveCat(catIdx, -1)}
+                        disabled={catIdx === 0}
+                        className="p-1 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90 transition-all"
+                        title="카테고리 위로"
+                      >
+                        <ChevronUp size={14} className="text-toss-text-tertiary" />
+                      </button>
+                      <button
+                        onClick={() => moveCat(catIdx, 1)}
+                        disabled={catIdx === grouped.length - 1}
+                        className="p-1 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90 transition-all"
+                        title="카테고리 아래로"
+                      >
+                        <ChevronDown size={14} className="text-toss-text-tertiary" />
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="text-right">
                   <p className="num text-sm font-bold text-toss-text-primary">
                     {hideAssets ? '••••••' : fmtKRW(catTotal)}
@@ -198,27 +267,28 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
                 </div>
               </div>
 
-              {/* Accounts within this category */}
-              {accounts.map((acc, _accIdx) => {
+              {/* 계좌별 */}
+              {accounts.map((acc) => {
                 const accGlobalIdx = data.accounts.indexOf(acc);
                 const holdings = getHoldings(acc, activeOrder);
+                const brokerColor = brokerColorMap[acc.name] ?? chartColor(0);
 
-                // visible holdings in view mode
                 const visibleHoldings = editMode
                   ? holdings
                   : holdings.filter(h => !activeHidden.has(`${acc.name}::${h.ticker || h.name}`));
 
                 return (
                   <div key={acc.name}>
-                    {/* Account sub-header */}
+                    {/* 계좌 서브헤더 */}
                     <div className="flex items-center justify-between px-4 py-2.5 bg-toss-bg/50">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[13px] font-semibold text-toss-text-secondary truncate">
-                          {acc.name}
-                        </span>
-                        <span className="text-[10px] text-toss-text-tertiary bg-toss-border/80 px-1.5 py-0.5 rounded-full shrink-0">
-                          {acc.type}
-                        </span>
+                        <BrokerBadge accName={acc.name} color={brokerColor} />
+                        <div className="min-w-0">
+                          <span className="text-[13px] font-semibold text-toss-text-secondary truncate block">
+                            {acc.name}
+                          </span>
+                          <span className="text-[10px] text-toss-text-tertiary">{acc.type}</span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {!editMode && (
@@ -263,19 +333,19 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
                       </div>
                     </div>
 
-                    {/* IRP info bar (view mode only) */}
+                    {/* IRP 모니터 */}
                     {!editMode && acc.irp_info && (
                       <div className="px-4 py-3 border-b border-toss-border/30 bg-toss-bg/20">
                         <IrpMonitor info={acc.irp_info} hideAssets={hideAssets} />
                       </div>
                     )}
 
-                    {/* Holdings */}
+                    {/* 종목 목록 */}
                     <div className="divide-y divide-toss-border/30">
                       {(editMode ? holdings : visibleHoldings).map((h, hi) => {
                         const id = `${acc.name}::${h.ticker || h.name}`;
                         const isHidden = activeHidden.has(id);
-                        const color = colorMap[id] ?? chartColor(0);
+                        const color = brokerColor;
 
                         return (
                           <div
@@ -296,7 +366,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
                             </div>
 
                             {editMode ? (
-                              /* Edit mode: pencil + toggle + up/down */
+                              /* 편집 모드: 연필 + 토글 + 순서 */
                               <div className="flex items-center gap-3 shrink-0">
                                 <button
                                   onClick={() => onEdit(acc, h)}
@@ -324,21 +394,33 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
                                 </div>
                               </div>
                             ) : (
-                              /* View mode: value + day change */
-                              <div className="text-right shrink-0">
-                                <p className="num text-[13px] font-bold text-toss-text-primary">
-                                  {hideAssets ? '••••' : fmtKRW(h.value_krw)}
-                                </p>
-                                {h.day_change_krw !== null && (
-                                  <p className={`num text-[11px] ${colorClass(h.day_change_krw)}`}>
-                                    {h.day_change_krw >= 0 ? '+' : ''}
-                                    {hideAssets ? '••••' : fmtKRW(h.day_change_krw)}
+                              /* 뷰 모드: 평가금액 + 오늘 등락 + 거래 버튼 */
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="text-right">
+                                  <p className="num text-[13px] font-bold text-toss-text-primary">
+                                    {hideAssets ? '••••' : fmtKRW(h.value_krw)}
                                   </p>
-                                )}
-                                {h.day_change_pct !== null && (
-                                  <p className={`num text-[10px] ${colorClass(h.day_change_pct)}`}>
-                                    ({fmtPct(h.day_change_pct)})
-                                  </p>
+                                  {h.day_change_krw !== null && (
+                                    <p className={`num text-[11px] ${colorClass(h.day_change_krw)}`}>
+                                      {h.day_change_krw >= 0 ? '+' : ''}
+                                      {hideAssets ? '••••' : fmtKRW(h.day_change_krw)}
+                                    </p>
+                                  )}
+                                  {h.day_change_pct !== null && (
+                                    <p className={`num text-[10px] ${colorClass(h.day_change_pct)}`}>
+                                      ({fmtPct(h.day_change_pct)})
+                                    </p>
+                                  )}
+                                </div>
+                                {/* 빠른 매수/매도 버튼 (스냅샷 종목 제외) */}
+                                {!h.is_snapshot && (
+                                  <button
+                                    onClick={() => onTrade(acc, h)}
+                                    className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
+                                    title="매수/매도"
+                                  >
+                                    <ArrowLeftRight size={13} className="text-toss-text-tertiary" />
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -346,7 +428,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onMoveAc
                         );
                       })}
 
-                      {/* Add holding button in edit mode */}
+                      {/* 편집 모드: 종목 추가 */}
                       {editMode && (
                         <button
                           onClick={() => onAdd(acc)}

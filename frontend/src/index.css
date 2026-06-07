@@ -75,6 +75,19 @@ input, button, select, textarea {
   font-family: inherit;
 }
 
+/* 주가 전광판 스크롤 */
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-33.333%); }
+}
+.ticker-tape-track {
+  width: max-content;
+  animation: ticker-scroll 25s linear infinite;
+}
+.ticker-tape-track:hover {
+  animation-play-state: paused;
+}
+
 /* Skeleton shimmer */
 @keyframes shimmer {
   0% { background-position: -800px 0; }

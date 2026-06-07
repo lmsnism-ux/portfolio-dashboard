@@ -81,6 +81,28 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['history'] }),
   });
 
+  // 각 탭에 얼마나 데이터가 있는지 계산
+  // 'full' = 선택 기간 전체에 데이터 있음, 'partial' = 일부, 'no-extra' = 범위가 전체 보유 데이터를 초과함
+  const tabDataStatus = useMemo(() => {
+    const result: Record<string, 'full' | 'partial' | 'no-extra'> = {};
+    if (!items?.length) {
+      RANGES.forEach(r => { result[r.key] = 'no-extra'; });
+      return result;
+    }
+    const earliest = items[0].date;
+    RANGES.forEach(r => {
+      if (r.key === 'ALL') { result[r.key] = 'full'; return; }
+      const now = new Date();
+      let cutoff: Date;
+      if (r.key === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
+      else cutoff = new Date(now.getTime() - r.days * 86400000);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      if (earliest <= cutoffStr) result[r.key] = 'full';
+      else result[r.key] = 'no-extra';
+    });
+    return result;
+  }, [items]);
+
   const filtered = useMemo(() => {
     if (!items) return [];
     if (range === 'ALL') return items;
@@ -101,15 +123,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     return [filtered[0], filtered[filtered.length - 1]] as const;
   }, [filtered]);
 
-  // 선택한 기간보다 보유 데이터가 적은지 체크
-  const dataShortfall = useMemo(() => {
-    if (!items || !items.length || range === 'ALL') return false;
-    const now = new Date();
-    let cutoff: Date;
-    if (range === 'YTD') cutoff = new Date(now.getFullYear(), 0, 1);
-    else cutoff = new Date(now.getTime() - RANGES.find((r) => r.key === range)!.days * 86400000);
-    return (items[0]?.date ?? '') > cutoff.toISOString().slice(0, 10);
-  }, [items, range]);
+  const dataShortfall = tabDataStatus[range] === 'no-extra' && range !== 'ALL';
 
   const periodChange = useMemo(() => {
     if (!first || !last || first === last) return null;
@@ -126,11 +140,9 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     const lastPoint = items[items.length - 1];
 
     const beforeMonth = items.filter((p) => p.date < monthStartStr);
-    // fallback: if no data before month start, use earliest available
     const monthBase = beforeMonth[beforeMonth.length - 1] ?? items[0];
 
     const beforeYear = items.filter((p) => p.date < yearStartStr);
-    // fallback: if no data before year start, use earliest available
     const yearBase = beforeYear[beforeYear.length - 1] ?? items[0];
 
     const monthDiff = lastPoint.total_value_krw - monthBase.total_value_krw;
@@ -145,6 +157,8 @@ export default function HistoryChart({ data, hideAssets }: Props) {
 
     return { monthDiff, monthPct, yearDiff, yearPct };
   }, [items]);
+
+  const availableDays = items?.length ?? 0;
 
   return (
     <section className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden">
@@ -209,12 +223,9 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}
               </p>
             ) : null}
-            {first && last && first !== last && (
-              <p className="text-[10px] text-toss-text-tertiary mt-1 flex items-center gap-1.5">
-                <span>{first.date.slice(5)} ~ {last.date.slice(5)} ({filtered.length}일)</span>
-                {dataShortfall && (
-                  <span className="text-amber-400">· 데이터 {filtered.length}일 보유</span>
-                )}
+            {first && last && (
+              <p className="text-[10px] text-toss-text-tertiary mt-1">
+                {first.date.slice(5)} ~ {last.date.slice(5)} ({filtered.length}일)
               </p>
             )}
           </div>
@@ -231,23 +242,53 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`}
               />
             </button>
+
+            {/* 기간 탭 — 데이터가 부족한 탭은 dim 처리 */}
             <div className="flex bg-toss-bg rounded-full p-0.5 gap-0.5">
-              {RANGES.map((r) => (
-                <button
-                  key={r.key}
-                  onClick={() => setRange(r.key)}
-                  className={`px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
-                    range === r.key
-                      ? 'bg-toss-blue text-white shadow-sm'
-                      : 'text-toss-text-tertiary hover:text-toss-text-secondary'
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
+              {RANGES.map((r) => {
+                const st = tabDataStatus[r.key] ?? 'no-extra';
+                const isActive = range === r.key;
+                const hasData = st === 'full';
+                return (
+                  <button
+                    key={r.key}
+                    onClick={() => setRange(r.key)}
+                    className={`relative px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
+                      isActive
+                        ? 'bg-toss-blue text-white shadow-sm'
+                        : hasData
+                          ? 'text-toss-text-secondary hover:text-toss-text-primary'
+                          : 'text-toss-text-tertiary/50 hover:text-toss-text-tertiary'
+                    }`}
+                  >
+                    {r.label}
+                    {/* 데이터 부족 탭에 작은 점 표시 */}
+                    {!hasData && !isActive && r.key !== 'ALL' && (
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
+
+        {/* 데이터 부족 안내 — 선택한 기간보다 보유 데이터가 적을 때 */}
+        {dataShortfall && availableDays > 0 && (
+          <div className="mb-3 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <p className="text-[11px] text-amber-400 leading-relaxed">
+              현재 <span className="font-bold">{availableDays}일</span> 데이터만 있어요.
+              선택한 기간보다 짧아 차트가 동일하게 보입니다.
+            </p>
+            <button
+              onClick={() => backfillMutation.mutate()}
+              disabled={backfillMutation.isPending}
+              className="shrink-0 text-[10px] font-semibold text-amber-400 border border-amber-400/40 px-2.5 py-1 rounded-full hover:bg-amber-400/10 active:scale-95 transition-all"
+            >
+              {backfillMutation.isPending ? '계산 중...' : '30일 추가'}
+            </button>
+          </div>
+        )}
 
         <div className="h-[180px] sm:h-[220px] -mx-1">
           {isLoading ? (
