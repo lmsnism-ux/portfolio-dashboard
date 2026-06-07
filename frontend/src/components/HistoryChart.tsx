@@ -3,19 +3,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { RotateCcw } from 'lucide-react';
 import { fetchHistory, triggerBackfill } from '../api';
-import { fmtKRW, colorClass } from '../utils';
-import type { HistoryPoint } from '../types';
+import { fmtKRW, fmtPct, colorClass } from '../utils';
+import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y';
+type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
+
 const RANGES: { key: Range; label: string; days: number }[] = [
   { key: '1M', label: '1개월', days: 31 },
   { key: '3M', label: '3개월', days: 92 },
   { key: '6M', label: '6개월', days: 183 },
   { key: 'YTD', label: '올해', days: 0 },
   { key: '1Y', label: '1년', days: 365 },
+  { key: 'ALL', label: '전체', days: 0 },
 ];
 
 interface Props {
+  data: PortfolioSummary;
   hideAssets: boolean;
 }
 
@@ -23,13 +26,13 @@ const ToolTipBox = ({ active, payload, hideAssets }: any) => {
   if (!active || !payload?.length) return null;
   const p: HistoryPoint = payload[0].payload;
   return (
-    <div className="bg-toss-card border border-toss-border rounded-xl px-3 py-2 shadow-[var(--shadow-toss-pop)]">
-      <p className="text-xs text-toss-text-tertiary">{p.date}</p>
+    <div className="bg-toss-card border border-toss-border rounded-xl px-3 py-2.5 shadow-[var(--shadow-toss-pop)]">
+      <p className="text-[11px] text-toss-text-tertiary mb-1">{p.date}</p>
       <p className="num text-sm font-bold text-toss-text-primary">
         {hideAssets ? '••••••' : fmtKRW(p.total_value_krw)}
       </p>
       {p.total_profit_pct !== null && (
-        <p className={`num text-xs ${colorClass(p.total_profit_pct)}`}>
+        <p className={`num text-xs mt-0.5 ${colorClass(p.total_profit_pct)}`}>
           누적 {p.total_profit_pct >= 0 ? '+' : ''}
           {p.total_profit_pct.toFixed(2)}%
         </p>
@@ -38,25 +41,49 @@ const ToolTipBox = ({ active, payload, hideAssets }: any) => {
   );
 };
 
-export default function HistoryChart({ hideAssets }: Props) {
+interface MiniStatProps {
+  label: string;
+  diff: number | null;
+  pct: number | null;
+  hideAssets: boolean;
+}
+
+const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
+  <div className="bg-toss-bg rounded-2xl p-3.5">
+    <p className="text-[10px] font-medium text-toss-text-tertiary tracking-wide uppercase mb-2">{label}</p>
+    {diff !== null ? (
+      <>
+        <p className={`num text-[15px] font-bold leading-tight ${colorClass(diff)}`}>
+          {diff >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(diff)}
+        </p>
+        <p className={`num text-[11px] mt-0.5 font-medium ${colorClass(pct)}`}>
+          {fmtPct(pct)}
+        </p>
+      </>
+    ) : (
+      <p className="num text-[15px] font-bold text-toss-text-tertiary">-</p>
+    )}
+  </div>
+);
+
+export default function HistoryChart({ data, hideAssets }: Props) {
   const [range, setRange] = useState<Range>('1M');
   const queryClient = useQueryClient();
 
   const { data: items, isLoading } = useQuery({
     queryKey: ['history'],
-    queryFn: () => fetchHistory(365),
+    queryFn: () => fetchHistory(730),
     refetchInterval: 30 * 60 * 1000,
   });
 
   const backfillMutation = useMutation({
     mutationFn: () => triggerBackfill(30),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['history'] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['history'] }),
   });
 
   const filtered = useMemo(() => {
     if (!items) return [];
+    if (range === 'ALL') return items;
     const now = new Date();
     let cutoff: Date;
     if (range === 'YTD') {
@@ -81,110 +108,198 @@ export default function HistoryChart({ hideAssets }: Props) {
     return { diff, pct };
   }, [first, last]);
 
+  const profitStats = useMemo(() => {
+    if (!items || !items.length) return null;
+    const now = new Date();
+    const monthStartStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const yearStartStr = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
+    const lastPoint = items[items.length - 1];
+
+    const beforeMonth = items.filter((p) => p.date < monthStartStr);
+    const monthBase = beforeMonth[beforeMonth.length - 1] ?? null;
+
+    const beforeYear = items.filter((p) => p.date < yearStartStr);
+    const yearBase = beforeYear[beforeYear.length - 1] ?? null;
+
+    const monthDiff = monthBase ? lastPoint.total_value_krw - monthBase.total_value_krw : null;
+    const monthPct =
+      monthBase && monthBase.total_value_krw
+        ? (monthDiff! / monthBase.total_value_krw) * 100
+        : null;
+
+    const yearDiff = yearBase ? lastPoint.total_value_krw - yearBase.total_value_krw : null;
+    const yearPct =
+      yearBase && yearBase.total_value_krw ? (yearDiff! / yearBase.total_value_krw) * 100 : null;
+
+    return { monthDiff, monthPct, yearDiff, yearPct };
+  }, [items]);
+
   return (
-    <section className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] p-5">
-      <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-toss-text-secondary">자산 추이</h2>
-          {periodChange ? (
-            <p className="num text-xs mt-1 text-toss-text-tertiary">
-              이 기간{' '}
-              <span className={colorClass(periodChange.diff)}>
-                {periodChange.diff >= 0 ? '+' : ''}
-                {hideAssets ? '••••' : fmtKRW(periodChange.diff)} ({periodChange.pct >= 0 ? '+' : ''}
-                {periodChange.pct.toFixed(2)}%)
-              </span>
-            </p>
-          ) : last ? (
-            <p className="num text-xs mt-1 text-toss-text-tertiary">
-              현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => backfillMutation.mutate()}
-            disabled={backfillMutation.isPending}
-            className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
-            title="과거 30일 다시 계산"
-          >
-            <RotateCcw
-              size={14}
-              className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`}
-            />
-          </button>
-          <div className="flex bg-toss-bg rounded-full p-0.5">
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                className={`px-2.5 py-1 text-xs rounded-full transition-all ${
-                  range === r.key
-                    ? 'bg-toss-card text-toss-text-primary font-semibold shadow-sm'
-                    : 'text-toss-text-tertiary hover:text-toss-text-secondary'
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+    <section className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden">
+      {/* 투자 수익 요약 */}
+      <div className="px-5 pt-5 pb-4 border-b border-toss-border">
+        <p className="text-[11px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-3">
+          투자 수익 확인
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <MiniStat
+            label="오늘"
+            diff={data.total_day_change_krw}
+            pct={data.total_day_change_pct}
+            hideAssets={hideAssets}
+          />
+          <MiniStat
+            label="이번달"
+            diff={profitStats?.monthDiff ?? null}
+            pct={profitStats?.monthPct ?? null}
+            hideAssets={hideAssets}
+          />
+          <MiniStat
+            label="올해"
+            diff={profitStats?.yearDiff ?? null}
+            pct={profitStats?.yearPct ?? null}
+            hideAssets={hideAssets}
+          />
+          <MiniStat
+            label="누적 수익"
+            diff={data.total_profit_krw}
+            pct={data.total_profit_pct}
+            hideAssets={hideAssets}
+          />
         </div>
       </div>
 
-      <div className="h-[200px] sm:h-[240px] -mx-2">
-        {isLoading ? (
-          <div className="h-full skeleton rounded-xl" />
-        ) : filtered.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-2">
-            <p className="text-sm text-toss-text-secondary">아직 기록된 데이터가 없어요</p>
+      {/* 기간별 수익분석 차트 */}
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+          <div>
+            <p className="text-[11px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-1.5">
+              기간별 수익분석
+            </p>
+            {periodChange ? (
+              <div className="flex items-baseline gap-2">
+                <span className={`num text-2xl font-extrabold tracking-tight ${colorClass(periodChange.diff)}`}>
+                  {periodChange.diff >= 0 ? '+' : ''}
+                  {hideAssets ? '••••••' : fmtKRW(periodChange.diff)}
+                </span>
+                <span
+                  className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
+                    periodChange.diff >= 0
+                      ? 'bg-toss-up-soft text-toss-up'
+                      : 'bg-toss-down-soft text-toss-down'
+                  }`}
+                >
+                  {fmtPct(periodChange.pct)}
+                </span>
+              </div>
+            ) : last ? (
+              <p className="num text-sm text-toss-text-tertiary">
+                현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}
+              </p>
+            ) : null}
+            {first && last && first !== last && (
+              <p className="text-[10px] text-toss-text-tertiary mt-1">
+                {first.date.slice(5)} ~ {last.date.slice(5)}
+                {' '}({filtered.length}일)
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => backfillMutation.mutate()}
               disabled={backfillMutation.isPending}
-              className="text-xs text-toss-blue font-semibold px-3 py-1.5 bg-toss-blue-soft rounded-full"
+              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
+              title="과거 30일 다시 계산"
             >
-              {backfillMutation.isPending ? '계산 중...' : '과거 30일 추이 가져오기'}
+              <RotateCcw
+                size={14}
+                className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`}
+              />
             </button>
+            <div className="flex bg-toss-bg rounded-full p-0.5 gap-0.5">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={`px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
+                    range === r.key
+                      ? 'bg-toss-blue text-white shadow-sm'
+                      : 'text-toss-text-tertiary hover:text-toss-text-secondary'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={filtered} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3182F6" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#3182F6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="var(--color-toss-border)" strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                tickFormatter={(v) => v.slice(5)}
-                tickLine={false}
-                axisLine={false}
-                minTickGap={30}
-              />
-              <YAxis
-                hide={hideAssets}
-                tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                tickFormatter={(v) => `${(v / 1_0000_0000).toFixed(1)}억`}
-                tickLine={false}
-                axisLine={false}
-                width={48}
-                domain={['dataMin', 'dataMax']}
-              />
-              <Tooltip content={<ToolTipBox hideAssets={hideAssets} />} />
-              <Area
-                type="monotone"
-                dataKey="total_value_krw"
-                stroke="#3182F6"
-                strokeWidth={2.5}
-                fill="url(#histGrad)"
-                activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }}
-                dot={filtered.length === 1 ? { r: 5, fill: '#3182F6', strokeWidth: 0 } : false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
+        </div>
+
+        <div className="h-[180px] sm:h-[220px] -mx-1">
+          {isLoading ? (
+            <div className="h-full skeleton rounded-xl" />
+          ) : filtered.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
+              <p className="text-sm text-toss-text-secondary">이 기간의 데이터가 없어요</p>
+              <button
+                onClick={() => backfillMutation.mutate()}
+                disabled={backfillMutation.isPending}
+                className="text-xs text-toss-blue font-semibold px-4 py-2 bg-toss-blue-soft rounded-full transition-all active:scale-95"
+              >
+                {backfillMutation.isPending ? '계산 중...' : '과거 30일 추이 가져오기'}
+              </button>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={filtered} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#5B9CF6" stopOpacity={0.35} />
+                    <stop offset="60%" stopColor="#5B9CF6" stopOpacity={0.08} />
+                    <stop offset="100%" stopColor="#5B9CF6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  stroke="var(--color-toss-border)"
+                  strokeDasharray="4 4"
+                  vertical={false}
+                  strokeOpacity={0.6}
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
+                  tickFormatter={(v) => v.slice(5)}
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={32}
+                />
+                <YAxis
+                  hide={hideAssets}
+                  tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
+                  tickFormatter={(v) => {
+                    const abs = Math.abs(v);
+                    if (abs >= 1_0000_0000) return `${(v / 1_0000_0000).toFixed(1)}억`;
+                    return `${Math.round(v / 10000)}만`;
+                  }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={44}
+                  domain={['dataMin', 'dataMax']}
+                />
+                <Tooltip content={<ToolTipBox hideAssets={hideAssets} />} />
+                <Area
+                  type="monotone"
+                  dataKey="total_value_krw"
+                  stroke="#5B9CF6"
+                  strokeWidth={2.5}
+                  fill="url(#histGrad)"
+                  activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#5B9CF6' }}
+                  dot={filtered.length === 1 ? { r: 5, fill: '#5B9CF6', strokeWidth: 0 } : false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
     </section>
   );

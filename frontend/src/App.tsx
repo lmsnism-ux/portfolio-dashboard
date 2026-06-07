@@ -104,6 +104,9 @@ export default function App() {
       />
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-4">
+        {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
+        <HistoryChart data={data} hideAssets={hideAssets} />
+
         {/* 도넛 차트 3개 나란히 */}
         <AllocationCard data={data} hideAssets={hideAssets} />
 
@@ -111,9 +114,6 @@ export default function App() {
         {data.top_holdings?.length > 0 && (
           <HoldingsBar data={data} hideAssets={hideAssets} />
         )}
-
-        {/* 자산 추이 차트 */}
-        <HistoryChart hideAssets={hideAssets} />
 
         {/* 목표/자동매수 */}
         <GoalCard

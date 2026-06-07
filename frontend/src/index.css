@@ -25,22 +25,24 @@
   --radius-toss: 16px;
   --radius-toss-lg: 20px;
 
-  --shadow-toss-card: 0 1px 4px 0 rgba(0, 27, 71, 0.04), 0 0 1px 0 rgba(0, 27, 71, 0.08);
-  --shadow-toss-pop: 0 6px 24px 0 rgba(0, 27, 71, 0.08);
+  --shadow-toss-card: 0 2px 8px 0 rgba(0, 27, 71, 0.05), 0 0 0 1px rgba(0, 27, 71, 0.06);
+  --shadow-toss-pop: 0 8px 32px 0 rgba(0, 27, 71, 0.12);
 }
 
 /* 다크 모드 */
 .dark {
-  --color-toss-bg: #0F1017;
-  --color-toss-card: #181926;
-  --color-toss-border: #252638;
+  --color-toss-bg: #0D0E18;
+  --color-toss-card: #161724;
+  --color-toss-border: #232436;
   --color-toss-text-primary: #EEEEF6;
-  --color-toss-text-secondary: #9090B0;
-  --color-toss-text-tertiary: #55556A;
+  --color-toss-text-secondary: #8A8AAE;
+  --color-toss-text-tertiary: #50506A;
   --color-toss-blue: #5B9CF6;
-  --color-toss-blue-soft: rgba(91, 156, 246, 0.15);
-  --color-toss-up-soft: rgba(240, 68, 82, 0.12);
-  --color-toss-down-soft: rgba(91, 156, 246, 0.12);
+  --color-toss-blue-soft: rgba(91, 156, 246, 0.14);
+  --color-toss-up-soft: rgba(240, 68, 82, 0.13);
+  --color-toss-down-soft: rgba(91, 156, 246, 0.13);
+  --shadow-toss-card: 0 2px 16px 0 rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-toss-pop: 0 8px 40px 0 rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05);
 }
 
 html, body {
