@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -109,7 +110,7 @@ async def get_portfolio():
         except Exception as e:
             logger.warning(f"스냅샷 적재 실패: {e}")
 
-        return summary
+        return JSONResponse(content=summary, headers={"Cache-Control": "no-store"})
     except Exception as e:
         logger.error(f"포트폴리오 계산 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
