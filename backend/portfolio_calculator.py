@@ -30,10 +30,8 @@ def _seed_from_env() -> bool:
 
 
 def load_portfolio() -> dict:
+    _seed_from_env()  # 항상 env var와 동기화 (내용이 같으면 내부에서 스킵)
     if not PORTFOLIO_FILE.exists():
-        _seed_from_env()
-    if not PORTFOLIO_FILE.exists():
-        # 비어있는 기본값
         return {"accounts": []}
     return json.loads(PORTFOLIO_FILE.read_text())
 

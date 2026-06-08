@@ -69,8 +69,11 @@ const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
 function getRangeCutoff(key: Range, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
   const now = new Date();
   if (key === 'TODAY') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return { from: start, to: null };
+    // 이번주 월요일부터 오늘까지
+    const dow = now.getDay();
+    const daysFromMon = dow === 0 ? 6 : dow - 1;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysFromMon);
+    return { from: monday, to: null };
   }
   if (key === 'CM') {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: null };
@@ -118,11 +121,12 @@ export default function HistoryChart({ data, hideAssets }: Props) {
       return result;
     }
     const earliest = items[0].date;
-    const todayStr = new Date().toISOString().slice(0, 10);
     RANGES.forEach(r => {
       if (r.key === 'ALL' || r.key === 'CUSTOM') { result[r.key] = 'full'; return; }
       if (r.key === 'TODAY') {
-        result[r.key] = items.some(p => p.date === todayStr) ? 'full' : 'no-extra';
+        const { from: mon } = getRangeCutoff('TODAY', '', '');
+        const monStr = mon!.toISOString().slice(0, 10);
+        result[r.key] = earliest <= monStr ? 'full' : 'no-extra';
         return;
       }
       const { from } = getRangeCutoff(r.key, '', '');
@@ -255,7 +259,9 @@ export default function HistoryChart({ data, hideAssets }: Props) {
             ) : last ? (
               <p className="num text-sm text-toss-text-tertiary">현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}</p>
             ) : null}
-            {first && last && (
+            {range === 'TODAY' ? (
+              <p className="text-[10px] text-toss-text-tertiary mt-1">이번주 추이</p>
+            ) : first && last && (
               <p className="text-[10px] text-toss-text-tertiary mt-1">
                 {first.date.slice(5)} ~ {last.date.slice(5)} ({filtered.length}일)
               </p>
