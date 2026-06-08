@@ -37,16 +37,12 @@ function groupAvgPct(items: TickerItem[]): number {
   return items.reduce((s, t) => s + t.pct, 0) / items.length;
 }
 
-function shortTickerName(name: string): string {
-  let s = name
+function etfDisplayName(name: string): string {
+  return name
     .replace(ETF_BRAND_RE, '')
     .replace(/\s*INDXX\s*/gi, '')
-    .replace(/플러스/g, '+')
-    .replace(/액티브/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  s = s.replace(/TOP(\d+)/gi, 'T$1');
-  return s.length > 9 ? s.slice(0, 9) + '…' : s;
 }
 
 function accCatOrder(type: string): number {
@@ -112,24 +108,23 @@ function GroupHeaderBadge({ label, pct, sparkData }: { label: string; pct: numbe
   );
 }
 
-function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
+function HoldingCard({ item }: { item: TickerItem }) {
   const isPos = item.pct >= 0;
-  const titleAttr = `${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`;
-  const priceText = item.price ? `${item.priceLabel === '실시간' ? '현재가' : '종가'} ${item.price}` : null;
   return (
-    <div
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg cursor-default shrink-0 border ${
-        isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
-      }`}
-      title={titleAttr}
-    >
-      <span className="text-[10px] text-toss-text-secondary whitespace-nowrap font-medium">
-        {shortTickerName(item.name)}
-      </span>
-      {priceText && (
-        <span className="text-[10px] text-toss-text-tertiary whitespace-nowrap">{priceText}</span>
-      )}
-      <span className={`num text-[10px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
+    <div className={`flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border ${
+      isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
+    }`}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-toss-text-secondary leading-snug">
+          {etfDisplayName(item.name)}
+        </p>
+        {item.price && (
+          <p className="text-[10px] text-toss-text-tertiary mt-0.5">
+            {item.priceLabel === '실시간' ? '현재가' : '종가'} {item.price}
+          </p>
+        )}
+      </div>
+      <span className={`num text-[13px] font-extrabold shrink-0 pt-0.5 ${colorClass(item.pct)}`}>
         {isPos ? '+' : ''}{item.pct.toFixed(2)}%
       </span>
     </div>
@@ -221,8 +216,6 @@ export default function Header({
 
   const groups = { nasdaq: [] as TickerItem[], sp500: [] as TickerItem[], korea: [] as TickerItem[] };
   tickerItems.forEach(t => { groups[getGroup(t.name)].push(t); });
-  const hasUs = groups.nasdaq.length > 0 || groups.sp500.length > 0;
-  const usDetailItems = [...groups.nasdaq, ...(groups.sp500.length > 1 ? groups.sp500 : [])];
 
   return (
     <>
@@ -337,56 +330,24 @@ export default function Header({
         </div>
       </header>
 
-      {/* ── Non-sticky: 보유 종목 시세 ── */}
+      {/* ── Non-sticky: 시장 현황 대시보드 ── */}
       {tickerItems.length > 0 && (
         <div className="bg-toss-card border-b border-toss-border">
-          <div className="max-w-7xl mx-auto px-5">
-            <div className="divide-y divide-toss-border/40">
-
-              {/* 미국 주식 */}
-              {hasUs && (
-                <div className="py-3 flex items-start gap-4">
-                  <div className="flex flex-col items-center w-10 shrink-0 pt-0.5 gap-0.5">
-                    <span className="text-[18px] leading-none">🇺🇸</span>
-                    <span className="text-[8px] font-bold text-toss-text-tertiary tracking-wider">US</span>
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
-                      ))}
-                    </div>
-                    {usDetailItems.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {usDetailItems.map((item, i) => (
-                          <Badge key={i} item={item} hideAssets={hideAssets} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 국내 주식 */}
+          <div className="max-w-7xl mx-auto px-5 py-3 space-y-2.5">
+            {/* 대표 지수 요약 (스파크라인 포함) */}
+            <div className="flex flex-wrap gap-2">
+              {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
+              ))}
               {groups.korea.length > 0 && (
-                <div className="py-3 flex items-start gap-4">
-                  <div className="flex flex-col items-center w-10 shrink-0 pt-0.5 gap-0.5">
-                    <span className="text-[18px] leading-none">🇰🇷</span>
-                    <span className="text-[8px] font-bold text-toss-text-tertiary tracking-wider">KR</span>
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {groups.korea.map((item, i) => (
-                        <Badge key={i} item={item} hideAssets={hideAssets} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
               )}
-
+            </div>
+            {/* 보유 종목 카드 그리드 */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {tickerItems.map((item, i) => (
+                <HoldingCard key={i} item={item} />
+              ))}
             </div>
           </div>
         </div>
