@@ -35,6 +35,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,        // 새 배포 즉시 활성화
+        clientsClaim: true,       // 즉시 모든 탭 제어
         // API는 항상 네트워크 우선 (오프라인일 때만 캐시), 정적 자원은 캐시 우선
         navigateFallback: `${base}index.html`,
         runtimeCaching: [
