@@ -265,12 +265,10 @@ export default function AutoBuyCard({ items, accounts }: Props) {
                               <button
                                 onClick={() => setEditing({
                                   key: itemKey,
-                                  amount: item.amount_krw !== null
+                                  amount: item.amount_krw !== null && item.currency === 'KRW'
                                     ? String(item.amount_krw)
                                     : item.amount.replace(/[^0-9.]/g, ''),
-                                  frequency: FREQ_OPTIONS.find(f =>
-                                    item.frequency.includes(f.label.replace(/[()]/g, '').trim().split(' ')[0])
-                                  )?.value ?? 'daily_weekday',
+                                  frequency: item.frequency_key ?? 'daily_weekday',
                                 })}
                                 className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
                                 title="편집"

@@ -1,9 +1,9 @@
-import type { } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime } from '../utils';
-import { fetchSparkline } from '../api';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, categorizeAccount } from '../utils';
+import { fetchSparkline, getApiKey, setApiKey } from '../api';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
 const NASDAQ_RE = /\b(QLD|TQQQ|QQQ)\b|나스닥|nasdaq|미국테크/i;
@@ -45,11 +45,11 @@ function etfDisplayName(name: string): string {
     .trim();
 }
 
+const CAT_PRIORITY: Record<string, number> = {
+  '투자': 1, '개인연금': 2, '퇴직연금': 2, '저축': 3, '기타': 4,
+};
 function accCatOrder(type: string): number {
-  if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return 1;
-  if (/IRP|DC|퇴직|연금|연금저축/i.test(type)) return 2;
-  if (/적금|예금|저축/i.test(type)) return 3;
-  return 4;
+  return CAT_PRIORITY[categorizeAccount(type)] ?? 4;
 }
 
 interface Props {
@@ -153,32 +153,51 @@ export default function Header({
     refetchInterval: 60 * 60 * 1000,
   });
 
-  const dcAccs    = data.accounts.filter(a => /DC|퇴직/i.test(a.type));
-  const dcKrw     = dcAccs.reduce((s, a) => s + a.value_krw, 0);
-  const dcDayChg  = dcAccs.reduce((s, a) => s + a.day_change_krw, 0);
-  const dcProfit  = dcAccs.reduce((s, a) => s + a.profit_krw, 0);
-  const dcCost    = dcAccs.reduce((s, a) => s + a.cost_krw, 0);
+  // 우상단 메뉴 + 시장 현황 collapse + API 키 모달
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(() => localStorage.getItem('pd_market_open') !== '0');
+  const [apiKeyOpen, setApiKeyOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // 부동산/대출 분리 토글 계산
-  // 백엔드 total_value_krw = 투자자산 + (부동산현재가 - 대출잔액) = 투자자산 + re_equity
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
+
+  const toggleMarket = () => {
+    setMarketOpen(o => {
+      localStorage.setItem('pd_market_open', !o ? '1' : '0');
+      return !o;
+    });
+  };
+
+  // 백엔드 사전 계산값 사용 (Phase 1: 비즈로직 백엔드 이관)
+  const dcKrw    = data.dc_value_krw     ?? 0;
+  const dcDayChg = data.dc_day_change_krw ?? 0;
+  const dcProfit = (data.dc_value_krw ?? 0) - (data.dc_cost_krw ?? 0);
+  const dcCost   = data.dc_cost_krw      ?? 0;
+
+  // 부동산/대출 분리 토글 — 백엔드 total은 (투자자산 + 부동산순자산) 기준
   const reEquityRaw = data.real_estate_equity_krw ?? 0;
   const reCostRaw   = data.real_estate_cost_krw ?? 0;
   const reLoan      = data.real_estate_loan_krw ?? 0;
 
-  let reAdjustValue = 0;  // total_value_krw에 더할 보정값
-  let reAdjustCost  = 0;  // total_cost_krw에 더할 보정값
+  let reAdjustValue = 0;
+  let reAdjustCost  = 0;
   if (!realEstateOn) {
-    // 부동산 전체 제외
     reAdjustValue = -reEquityRaw;
     reAdjustCost  = -reCostRaw;
   } else if (!loanOn) {
-    // 부동산은 포함, 대출은 부채로 미반영 (총자산에 대출잔액 추가)
+    // 부동산은 포함, 대출은 부채로 미반영
     reAdjustValue = reLoan;
     reAdjustCost  = reLoan;
   }
 
-  const dcExclude = dcOn ? 0 : dcKrw;
-
+  const dcExclude        = dcOn ? 0 : dcKrw;
   const displayTotal     = data.total_value_krw - dcExclude + reAdjustValue;
   const displayDayChg    = data.total_day_change_krw - (dcOn ? 0 : dcDayChg);
   const displayProfit    = data.total_profit_krw - (dcOn ? 0 : dcProfit) + (reAdjustValue - reAdjustCost);
@@ -241,15 +260,62 @@ export default function Header({
               </span>
             </div>
             <div className="flex items-center gap-0.5">
-              <button onClick={onToggleHide} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={hideAssets ? '자산 보기' : '자산 가리기'}>
-                {hideAssets ? <EyeOff size={17} className="text-toss-text-secondary" /> : <Eye size={17} className="text-toss-text-secondary" />}
-              </button>
-              <button onClick={onRefresh} disabled={isRefreshing} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50" title="가격 갱신">
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                aria-label="가격 갱신"
+                className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
+                title="가격 갱신"
+              >
                 <RefreshCw size={17} className={`text-toss-text-secondary ${isRefreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={dark ? '라이트 모드' : '다크 모드'}>
-                {dark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-toss-text-secondary" />}
-              </button>
+              <div ref={menuRef} className="relative">
+                <button
+                  onClick={() => setMenuOpen(o => !o)}
+                  aria-label="메뉴"
+                  aria-expanded={menuOpen}
+                  className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all"
+                  title="설정"
+                >
+                  <MoreVertical size={17} className="text-toss-text-secondary" />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-toss-card border border-toss-border rounded-2xl shadow-[var(--shadow-toss-pop)] overflow-hidden z-30">
+                    <button
+                      onClick={() => { onToggleHide(); setMenuOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-toss-bg text-left text-[13px] text-toss-text-primary"
+                    >
+                      {hideAssets ? <Eye size={15} /> : <EyeOff size={15} />}
+                      {hideAssets ? '자산 보기' : '자산 가리기'}
+                    </button>
+                    <button
+                      onClick={() => { onToggleDark(); setMenuOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-toss-bg text-left text-[13px] text-toss-text-primary"
+                    >
+                      {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
+                      {dark ? '라이트 모드' : '다크 모드'}
+                    </button>
+                    {dcKrw > 0 && (
+                      <button
+                        onClick={() => { onToggleDc(); setMenuOpen(false); }}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-toss-bg text-left text-[13px] text-toss-text-primary border-t border-toss-border/50"
+                      >
+                        <span>퇴직연금 포함</span>
+                        <span className={`text-[11px] font-bold ${dcOn ? 'text-toss-blue' : 'text-toss-text-tertiary'}`}>
+                          {dcOn ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setApiKeyOpen(true); setMenuOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-toss-bg text-left text-[13px] text-toss-text-primary border-t border-toss-border/50"
+                    >
+                      <Key size={15} />
+                      API 키 설정
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -257,17 +323,10 @@ export default function Header({
           <div className="mb-3">
             <div className="flex items-center gap-2 mb-1.5">
               <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase">총 자산</p>
-              {dcKrw > 0 && (
-                <button
-                  onClick={onToggleDc}
-                  className={`text-[9px] px-2 py-0.5 rounded-full border font-medium transition-all ${
-                    !dcOn
-                      ? 'border-indigo-400/40 text-indigo-400 bg-indigo-500/10'
-                      : 'border-toss-border text-toss-text-tertiary hover:border-toss-text-tertiary'
-                  }`}
-                >
-                  {dcOn ? '전체' : '퇴직연금 제외'}
-                </button>
+              {!dcOn && dcKrw > 0 && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-medium">
+                  퇴직연금 제외
+                </span>
               )}
             </div>
             <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
@@ -286,8 +345,6 @@ export default function Header({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <span className="text-[11px] text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
-                <span className="text-[11px] text-toss-text-tertiary/50">·</span>
-                <span className="text-[10px] text-toss-text-tertiary/70">{fmtAbsTime(data.price_updated_at)}</span>
                 {data.market_status === 'closed' && (
                   <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
                 )}
@@ -330,28 +387,97 @@ export default function Header({
         </div>
       </header>
 
-      {/* ── Non-sticky: 시장 현황 대시보드 ── */}
+      {/* ── Non-sticky: 시장 현황 대시보드 (접기/펴기) ── */}
       {tickerItems.length > 0 && (
         <div className="bg-toss-card border-b border-toss-border">
           <div className="max-w-7xl mx-auto px-5 py-3 space-y-2.5">
-            {/* 대표 지수 요약 (스파크라인 포함) */}
-            <div className="flex flex-wrap gap-2">
-              {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
-              ))}
-              {groups.korea.length > 0 && (
-                <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
-              )}
+            {/* 대표 지수 요약 + 접기 버튼 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex flex-wrap gap-2 flex-1">
+                {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                  <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
+                ))}
+                {groups.korea.length > 0 && (
+                  <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
+                )}
+              </div>
+              <button
+                onClick={toggleMarket}
+                aria-label={marketOpen ? '시장 현황 접기' : '시장 현황 펴기'}
+                aria-expanded={marketOpen}
+                className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all shrink-0"
+              >
+                {marketOpen
+                  ? <ChevronUp size={16} className="text-toss-text-tertiary" />
+                  : <ChevronDown size={16} className="text-toss-text-tertiary" />}
+              </button>
             </div>
             {/* 보유 종목 카드 그리드 */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {tickerItems.map((item, i) => (
-                <HoldingCard key={i} item={item} />
-              ))}
-            </div>
+            {marketOpen && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {tickerItems.map((item, i) => (
+                  <HoldingCard key={i} item={item} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* API 키 설정 모달 */}
+      {apiKeyOpen && <ApiKeyModal onClose={() => setApiKeyOpen(false)} />}
     </>
+  );
+}
+
+function ApiKeyModal({ onClose }: { onClose: () => void }) {
+  const [draft, setDraft] = useState<string>(() => getApiKey());
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [onClose]);
+
+  const save = () => {
+    setApiKey(draft.trim());
+    onClose();
+  };
+
+  return (
+    <div
+      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-toss-text-primary mb-1">API 키 설정</h2>
+        <p className="text-[12px] text-toss-text-secondary mb-4">
+          백엔드 PORTFOLIO_API_KEY 환경변수와 동일한 값을 입력하세요. 빈 칸으로 저장하면 키를 제거합니다.
+        </p>
+        <input
+          type="password"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="API key"
+          className="w-full bg-toss-bg rounded-xl px-4 py-3 text-base text-toss-text-primary focus:outline-none focus:ring-2 focus:ring-toss-blue mb-4"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-toss-bg text-toss-text-primary font-semibold active:scale-[0.98]">
+            취소
+          </button>
+          <button onClick={save} className="flex-[2] py-3 rounded-xl bg-toss-blue text-white font-semibold active:scale-[0.98]">
+            저장
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

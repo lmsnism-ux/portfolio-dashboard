@@ -1,21 +1,20 @@
 """FastAPI 포트폴리오 대시보드 백엔드"""
 from __future__ import annotations
 import asyncio
-import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from price_fetcher import refresh_all_prices, get_cached_prices
-from portfolio_calculator import load_portfolio, build_portfolio_summary, PORTFOLIO_FILE
+from portfolio_calculator import load_portfolio, build_portfolio_summary, save_portfolio
 from history_store import record_snapshot_from_summary, get_history
 from history_backfill import backfill_history
 
@@ -59,20 +58,53 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Portfolio Dashboard API", lifespan=lifespan)
 
-import os as _os
-
 _extra_origins = [
-    o.strip() for o in (_os.environ.get("ALLOWED_ORIGINS", "")).split(",") if o.strip()
+    o.strip() for o in (os.environ.get("ALLOWED_ORIGINS", "")).split(",") if o.strip()
 ]
+
+# API 인증: PORTFOLIO_API_KEY 환경변수가 설정되면 쓰기 작업에 X-API-Key 헤더 필요
+_API_KEY = os.environ.get("PORTFOLIO_API_KEY", "").strip()
+_LAN_AUTH_REQUIRED = os.environ.get("LAN_REQUIRE_AUTH", "0") == "1"
+
+
+def require_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> None:
+    """쓰기 엔드포인트 보호.
+
+    - PORTFOLIO_API_KEY가 설정되어 있으면 헤더 필수
+    - 미설정 시: 사설망(LAN)에서만 통과 — 외부 도메인은 차단
+    """
+    if _API_KEY:
+        if x_api_key != _API_KEY:
+            raise HTTPException(status_code=401, detail="invalid api key")
+        return
+
+    # 키 미설정 → LAN_REQUIRE_AUTH=1이면 차단, 아니면 사설망만 통과
+    client_host = (request.client.host if request.client else "") or ""
+    is_lan = (
+        client_host in ("127.0.0.1", "localhost", "::1")
+        or client_host.startswith("192.168.")
+        or client_host.startswith("10.")
+        or any(client_host.startswith(f"172.{i}.") for i in range(16, 32))
+    )
+    if _LAN_AUTH_REQUIRED or not is_lan:
+        raise HTTPException(
+            status_code=401,
+            detail="api key required (set PORTFOLIO_API_KEY and send X-API-Key header)",
+        )
+
 
 app.add_middleware(
     CORSMiddleware,
-    # 환경변수로 운영 도메인 지정 + LAN regex로 같은 WiFi 모바일 접근 허용
+    # 운영 도메인은 ALLOWED_ORIGINS env로 명시. LAN regex는 사설망만 허용.
     allow_origins=_extra_origins,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    # X-API-Key 헤더 허용 명시
+    allow_headers=["*", "X-API-Key"],
 )
 
 def _cache_stale_hours(updated_at: str | None) -> float | None:
@@ -128,7 +160,7 @@ async def get_portfolio_history(days: int = 365):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/history/backfill")
+@app.post("/api/history/backfill", dependencies=[Depends(require_api_key)])
 async def force_backfill(days: int = 30):
     """과거 N일 자산 추이를 다시 계산해서 채움 (수동 트리거)"""
     try:
@@ -158,11 +190,7 @@ class HoldingUpdate(BaseModel):
     remove_auto_buy: bool = False  # True → auto_buy 키 완전 제거
 
 
-def _save_portfolio(portfolio: dict[str, Any]) -> None:
-    PORTFOLIO_FILE.write_text(json.dumps(portfolio, ensure_ascii=False, indent=2))
-
-
-@app.patch("/api/portfolio/holding")
+@app.patch("/api/portfolio/holding", dependencies=[Depends(require_api_key)])
 async def update_holding(update: HoldingUpdate):
     """종목 보유수량/평단가/자동매수 수정"""
     try:
@@ -203,7 +231,7 @@ async def update_holding(update: HoldingUpdate):
                 ab["frequency"] = update.auto_buy.frequency
             holding["auto_buy"] = ab
 
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "holding": holding}
     except HTTPException:
         raise
@@ -245,7 +273,7 @@ class AccountOrder(BaseModel):
     names: list[str]  # 새 순서대로의 계좌명
 
 
-@app.post("/api/portfolio/holding")
+@app.post("/api/portfolio/holding", dependencies=[Depends(require_api_key)])
 async def add_holding(create: HoldingCreate):
     """계좌에 종목 추가"""
     try:
@@ -286,7 +314,7 @@ async def add_holding(create: HoldingCreate):
                     raise HTTPException(status_code=409, detail="이미 동일 종목이 있는 계좌입니다")
 
         account["holdings"].append(new_holding)
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "holding": new_holding}
     except HTTPException:
         raise
@@ -295,7 +323,7 @@ async def add_holding(create: HoldingCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/portfolio/holding")
+@app.delete("/api/portfolio/holding", dependencies=[Depends(require_api_key)])
 async def delete_holding(delete: HoldingDelete):
     """종목 제거"""
     try:
@@ -315,7 +343,7 @@ async def delete_holding(delete: HoldingDelete):
         if len(account["holdings"]) == before:
             raise HTTPException(status_code=404, detail="종목을 찾을 수 없습니다")
 
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "removed": delete.holding_key}
     except HTTPException:
         raise
@@ -324,7 +352,7 @@ async def delete_holding(delete: HoldingDelete):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/portfolio/account")
+@app.post("/api/portfolio/account", dependencies=[Depends(require_api_key)])
 async def add_account(create: AccountCreate):
     """계좌 추가 (빈 상태)"""
     try:
@@ -341,7 +369,7 @@ async def add_account(create: AccountCreate):
         if create.etf_limit is not None:
             new_account["etf_limit"] = create.etf_limit
         portfolio["accounts"].append(new_account)
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "account": new_account}
     except HTTPException:
         raise
@@ -350,7 +378,7 @@ async def add_account(create: AccountCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/portfolio/account")
+@app.delete("/api/portfolio/account", dependencies=[Depends(require_api_key)])
 async def delete_account(name: str):
     """계좌 제거 (빈 계좌만 허용)"""
     try:
@@ -361,7 +389,7 @@ async def delete_account(name: str):
         if account["holdings"]:
             raise HTTPException(status_code=400, detail="종목이 남아있어 삭제할 수 없습니다")
         portfolio["accounts"] = [a for a in portfolio["accounts"] if a["name"] != name]
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -370,7 +398,7 @@ async def delete_account(name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.patch("/api/portfolio/accounts/order")
+@app.patch("/api/portfolio/accounts/order", dependencies=[Depends(require_api_key)])
 async def reorder_accounts(body: AccountOrder):
     """계좌 순서 변경. body.names의 순서대로 정렬."""
     try:
@@ -379,7 +407,7 @@ async def reorder_accounts(body: AccountOrder):
         if set(by_name.keys()) != set(body.names):
             raise HTTPException(status_code=400, detail="계좌 목록이 일치하지 않습니다")
         portfolio["accounts"] = [by_name[n] for n in body.names]
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "order": body.names}
     except HTTPException:
         raise
@@ -388,13 +416,13 @@ async def reorder_accounts(body: AccountOrder):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.patch("/api/portfolio/goal")
+@app.patch("/api/portfolio/goal", dependencies=[Depends(require_api_key)])
 async def update_goal(update: GoalUpdate):
     """목표 자산 금액 설정"""
     try:
         portfolio = load_portfolio()
         portfolio["goal_krw"] = int(update.goal_krw)
-        _save_portfolio(portfolio)
+        save_portfolio(portfolio)
         return {"status": "ok", "goal_krw": portfolio["goal_krw"]}
     except Exception as e:
         logger.error(f"goal 수정 오류: {e}", exc_info=True)
@@ -433,7 +461,7 @@ async def get_prices():
     """캐시된 가격 데이터 반환"""
     return get_cached_prices()
 
-@app.post("/api/prices/refresh")
+@app.post("/api/prices/refresh", dependencies=[Depends(require_api_key)])
 async def force_refresh():
     """수동으로 가격 갱신 트리거"""
     try:

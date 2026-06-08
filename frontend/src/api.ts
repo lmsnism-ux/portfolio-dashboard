@@ -2,7 +2,33 @@ import type { HistoryPoint, PortfolioSummary } from './types';
 
 // dev에서는 vite proxy가 /api를 백엔드로 forward.
 // 배포 시 VITE_API_BASE=https://your-api.onrender.com 같이 지정.
-const BASE = (import.meta.env.VITE_API_BASE || '') + '/api';
+// 끝 슬래시 정규화: '/' 중복 방지
+const _RAW_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '');
+const BASE = `${_RAW_BASE}/api`;
+
+// 운영 환경에서 쓰기 작업 시 X-API-Key 헤더 전송. localStorage에 저장.
+const API_KEY_STORE = 'pd_api_key';
+export function getApiKey(): string {
+  return localStorage.getItem(API_KEY_STORE) ?? '';
+}
+export function setApiKey(key: string): void {
+  if (key) localStorage.setItem(API_KEY_STORE, key);
+  else localStorage.removeItem(API_KEY_STORE);
+}
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const key = getApiKey();
+  return key ? { ...extra, 'X-API-Key': key } : extra;
+}
+
+async function writeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = authHeaders((init.headers as Record<string, string>) ?? {});
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    throw new Error('인증이 필요해요. 우상단 ⓘ에서 API 키를 설정해주세요.');
+  }
+  return res;
+}
 
 export async function fetchPortfolio(): Promise<PortfolioSummary> {
   const res = await fetch(`${BASE}/portfolio`);
@@ -18,11 +44,11 @@ export async function fetchHistory(days = 365): Promise<HistoryPoint[]> {
 }
 
 export async function triggerRefresh(): Promise<void> {
-  await fetch(`${BASE}/prices/refresh`, { method: 'POST' });
+  await writeFetch(`${BASE}/prices/refresh`, { method: 'POST' });
 }
 
 export async function triggerBackfill(days = 30): Promise<{ filled_days: number }> {
-  const res = await fetch(`${BASE}/history/backfill?days=${days}`, { method: 'POST' });
+  const res = await writeFetch(`${BASE}/history/backfill?days=${days}`, { method: 'POST' });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
@@ -45,7 +71,7 @@ export interface HoldingPatch {
 }
 
 export async function patchHolding(body: HoldingPatch): Promise<void> {
-  const res = await fetch(`${BASE}/portfolio/holding`, {
+  const res = await writeFetch(`${BASE}/portfolio/holding`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -57,7 +83,7 @@ export async function patchHolding(body: HoldingPatch): Promise<void> {
 }
 
 export async function patchGoal(goal_krw: number): Promise<void> {
-  const res = await fetch(`${BASE}/portfolio/goal`, {
+  const res = await writeFetch(`${BASE}/portfolio/goal`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ goal_krw }),
@@ -84,7 +110,7 @@ export interface HoldingCreate {
 }
 
 export async function createHolding(body: HoldingCreate): Promise<void> {
-  const res = await fetch(`${BASE}/portfolio/holding`, {
+  const res = await writeFetch(`${BASE}/portfolio/holding`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -96,10 +122,39 @@ export async function createHolding(body: HoldingCreate): Promise<void> {
 }
 
 export async function deleteHolding(account_name: string, holding_key: string): Promise<void> {
-  const res = await fetch(`${BASE}/portfolio/holding`, {
+  const res = await writeFetch(`${BASE}/portfolio/holding`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ account_name, holding_key }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error ${res.status}`);
+  }
+}
+
+export interface AccountCreate {
+  name: string;
+  type: string;
+  currency?: string;
+  etf_limit?: number | null;
+}
+
+export async function createAccount(body: AccountCreate): Promise<void> {
+  const res = await writeFetch(`${BASE}/portfolio/account`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error ${res.status}`);
+  }
+}
+
+export async function deleteAccount(name: string): Promise<void> {
+  const res = await writeFetch(`${BASE}/portfolio/account?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE',
   });
   if (!res.ok) {
     const text = await res.text();
@@ -118,7 +173,7 @@ export async function fetchSparkline(): Promise<Record<string, number[]>> {
 }
 
 export async function reorderAccounts(names: string[]): Promise<void> {
-  const res = await fetch(`${BASE}/portfolio/accounts/order`, {
+  const res = await writeFetch(`${BASE}/portfolio/accounts/order`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ names }),

@@ -9,6 +9,7 @@ __pycache__/
 backend/price_cache.json
 backend/history.db
 backend/portfolio.json
+backend/backups/
 
 # Node
 node_modules/

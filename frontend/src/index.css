@@ -27,6 +27,16 @@
 
   --shadow-toss-card: 0 2px 8px 0 rgba(0, 27, 71, 0.05), 0 0 0 1px rgba(0, 27, 71, 0.06);
   --shadow-toss-pop: 0 8px 32px 0 rgba(0, 27, 71, 0.12);
+
+  /* 폰트 스케일 (Phase 3에서 도입). 최소 11px로 통일해 노안·작은 화면 가독성 확보. */
+  --fs-3xs: 11px;   /* 메타·캡션 (이전 9~10px 이슈 해결) */
+  --fs-2xs: 12px;   /* 보조 라벨 */
+  --fs-xs:  13px;   /* 본문 라벨 */
+  --fs-sm:  14px;   /* 본문 */
+  --fs-md:  16px;   /* 강조 본문 */
+  --fs-lg:  20px;   /* 카드 헤더 숫자 */
+  --fs-xl:  28px;   /* 섹션 강조 */
+  --fs-2xl: 42px;   /* 총자산 */
 }
 
 /* 다크 모드 */
@@ -97,5 +107,25 @@ input, button, select, textarea {
   background: linear-gradient(90deg, var(--color-toss-border) 0%, color-mix(in srgb, var(--color-toss-border) 50%, transparent) 50%, var(--color-toss-border) 100%);
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+
+/* 모달 진입 애니메이션 */
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-slide-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.modal-backdrop { animation: modal-fade-in 0.18s ease-out; }
+.modal-content  { animation: modal-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* 접근성: 포커스 보이도록 (마우스 사용 시 outline 숨김, 키보드 시 표시) */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--color-toss-blue);
+  outline-offset: 2px;
   border-radius: 6px;
 }

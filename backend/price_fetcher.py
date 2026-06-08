@@ -14,11 +14,43 @@ logger = logging.getLogger(__name__)
 _DATA_DIR = Path(os.environ.get("PORTFOLIO_DATA_DIR", str(Path(__file__).parent)))
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_FILE = _DATA_DIR / "price_cache.json"
+PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
 KST = timezone(timedelta(hours=9))
 ET = timezone(timedelta(hours=-4))  # EDT (summer)
 
-KOREAN_TICKERS = ["381170", "0167A0", "379800", "396500", "0021E0", "418660"]
-US_TICKERS = ["QLD", "TQQQ"]
+# 폴백용 기본 티커. portfolio.json에서 더 많이 발견되면 자동 확장.
+DEFAULT_KOREAN_TICKERS = ["381170", "0167A0", "379800", "396500", "0021E0", "418660"]
+DEFAULT_US_TICKERS = ["QLD", "TQQQ"]
+
+
+def _is_korean_ticker(ticker: str) -> bool:
+    """한국 ETF/주식 티커 판별: 숫자만 또는 숫자+영문 1글자 (6자리)"""
+    if not ticker:
+        return False
+    t = ticker.upper()
+    return len(t) == 6 and all(c.isdigit() or c.isalpha() for c in t) and any(c.isdigit() for c in t)
+
+
+def _collect_tickers_from_portfolio() -> tuple[list[str], list[str]]:
+    """portfolio.json에서 모든 ticker를 수집해 한국/미국으로 분류."""
+    kr: set[str] = set(DEFAULT_KOREAN_TICKERS)
+    us: set[str] = set(DEFAULT_US_TICKERS)
+    try:
+        if not PORTFOLIO_FILE.exists():
+            return list(kr), list(us)
+        portfolio = json.loads(PORTFOLIO_FILE.read_text())
+        for acc in portfolio.get("accounts", []):
+            for h in acc.get("holdings", []):
+                ticker = (h.get("ticker") or "").strip()
+                if not ticker:
+                    continue
+                if _is_korean_ticker(ticker):
+                    kr.add(ticker)
+                else:
+                    us.add(ticker.upper())
+    except Exception as e:
+        logger.warning(f"티커 수집 실패 (기본값 사용): {e}")
+    return list(kr), list(us)
 
 def _load_cache() -> dict:
     if CACHE_FILE.exists():
@@ -78,7 +110,56 @@ def fetch_usd_krw():
 
     return None
 
+def fetch_korean_etf_via_yahoo(ticker: str):
+    """Yahoo Finance .KS / .KQ로 한국 ETF 가격 조회 (네이버 폴백용).
+
+    한국 종목은 보통 Yahoo Finance에서 .KS (KOSPI) 또는 .KQ (KOSDAQ) 접미사를 사용한다.
+    """
+    for suffix in (".KS", ".KQ"):
+        try:
+            symbol = f"{ticker}{suffix}"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            data = r.json()
+            result = data.get("chart", {}).get("result", [])
+            if not result:
+                continue
+            closes = [c for c in result[0]["indicators"]["quote"][0]["close"] if c is not None]
+            if not closes:
+                continue
+            current_price = closes[-1]
+            prev_close = closes[-2] if len(closes) >= 2 else None
+            change_pct = None
+            change_amt = None
+            if current_price and prev_close:
+                change_amt = round(current_price - prev_close, 2)
+                change_pct = round((change_amt / prev_close) * 100, 2)
+            now_kst = datetime.now(KST)
+            is_open = 9 <= now_kst.hour < 16 and now_kst.weekday() < 5
+            return {
+                "price": round(current_price, 2),
+                "change_pct": change_pct,
+                "change_amt": change_amt,
+                "currency": "KRW",
+                "is_realtime": is_open,
+                "label": "실시간" if is_open else "종가 기준",
+                "fetched_at": datetime.now(KST).isoformat(),
+            }
+        except Exception:
+            continue
+    return None
+
+
 def fetch_korean_etf_price(ticker: str):
+    """한국 ETF 가격 조회. 1순위 네이버 크롤링 → 실패 시 Yahoo .KS/.KQ 폴백."""
+    result = _fetch_korean_etf_via_naver(ticker)
+    if result is not None:
+        return result
+    logger.info(f"네이버 실패 → Yahoo 폴백: {ticker}")
+    return fetch_korean_etf_via_yahoo(ticker)
+
+
+def _fetch_korean_etf_via_naver(ticker: str):
     """네이버 금융에서 한국 ETF 현재가 + 전일 대비 변동 조회.
 
     네이버 마크업(2026-06 기준):
@@ -210,7 +291,7 @@ def fetch_us_stock_price(ticker: str):
         return None
 
 def refresh_all_prices() -> dict:
-    """모든 가격 갱신 후 캐시 저장"""
+    """모든 가격 갱신 후 캐시 저장. portfolio.json에서 티커를 동적으로 수집."""
     cache = _load_cache()
     prices = cache.get("prices", {})
 
@@ -222,16 +303,20 @@ def refresh_all_prices() -> dict:
             cache["usd_krw_prev"] = fx["prev_close"]
         logger.info(f"환율 갱신: {fx['rate']} (prev={fx.get('prev_close')})")
 
+    # portfolio.json에서 현재 보유 중인 티커를 자동 수집
+    kr_tickers, us_tickers = _collect_tickers_from_portfolio()
+    logger.info(f"가격 갱신 대상: KR {len(kr_tickers)}개, US {len(us_tickers)}개")
+
     # 한국 ETF
-    for ticker in KOREAN_TICKERS:
+    for ticker in kr_tickers:
         result = fetch_korean_etf_price(ticker)
         if result:
             prices[ticker] = result
             logger.info(f"KR ETF {ticker}: {result['price']}")
         time.sleep(0.5)
 
-    # 미국 ETF
-    for ticker in US_TICKERS:
+    # 미국 ETF / 주식
+    for ticker in us_tickers:
         result = fetch_us_stock_price(ticker)
         if result:
             prices[ticker] = result

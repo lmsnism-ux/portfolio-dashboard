@@ -1,9 +1,13 @@
 """포트폴리오 계산 로직"""
 from __future__ import annotations
 import base64
+import fcntl
 import json
 import logging
 import os
+import shutil
+import tempfile
+import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,6 +18,65 @@ logger = logging.getLogger(__name__)
 _DATA_DIR = Path(os.environ.get("PORTFOLIO_DATA_DIR", str(Path(__file__).parent)))
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
+BACKUP_DIR = _DATA_DIR / "backups"
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+MAX_BACKUPS = 10
+
+# 프로세스 내 쓰기 보호 (fcntl은 프로세스 간만 보장)
+_FILE_LOCK = threading.Lock()
+
+
+def save_portfolio(portfolio: dict) -> None:
+    """portfolio.json 안전 저장.
+
+    - 백업 rotation (최대 MAX_BACKUPS개)
+    - tmp 파일 → 원자적 rename
+    - fcntl로 프로세스 간 락
+    - threading.Lock으로 같은 프로세스 내 동시성 보호
+    """
+    with _FILE_LOCK:
+        # 기존 파일 백업
+        if PORTFOLIO_FILE.exists():
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = BACKUP_DIR / f"portfolio_{ts}.json"
+            try:
+                shutil.copy2(PORTFOLIO_FILE, backup_path)
+                _rotate_backups()
+            except Exception as e:
+                logger.warning(f"백업 실패 (저장은 계속): {e}")
+
+        # 원자적 쓰기: tmp 파일 → fsync → rename
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(_DATA_DIR), prefix=".portfolio_", suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                # fcntl 락 (LOCK_EX = 배타 잠금)
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                try:
+                    json.dump(portfolio, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            os.replace(tmp_path, PORTFOLIO_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+
+def _rotate_backups() -> None:
+    """오래된 백업 정리 (최신 MAX_BACKUPS개만 유지)"""
+    try:
+        files = sorted(BACKUP_DIR.glob("portfolio_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in files[MAX_BACKUPS:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    except Exception as e:
+        logger.warning(f"백업 rotation 실패: {e}")
 
 
 def _seed_from_env() -> bool:
@@ -52,19 +115,83 @@ def _to_krw(amount: float, currency: str, usd_krw: float) -> float:
         return amount * usd_krw
     return amount
 
+FREQ_LABELS: dict[str, str] = {
+    "daily_weekday": "매 영업일",
+    "weekly_monday": "매주 월요일",
+    "weekly_friday": "매주 금요일",
+    "monthly_first": "매월 1일",
+    "monthly_last": "매월 말일",
+}
+
+
+def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
+    """주기에 따른 다음 매수일 계산. (라벨, datetime) 반환."""
+    if frequency == "daily_weekday":
+        nxt = now
+        # 미국 영업일: 한국시간 22시 이후면 다음날부터
+        while nxt.weekday() >= 5 or (nxt.date() == now.date() and now.hour >= 22):
+            nxt = nxt + timedelta(days=1)
+        label = "오늘" if nxt.date() == now.date() else nxt.strftime("%-m/%-d")
+        return label, nxt
+
+    if frequency == "weekly_monday":
+        days = (7 - now.weekday()) % 7 or 7
+        nxt = now + timedelta(days=days)
+        if now.weekday() == 0:
+            return "오늘 (월요일)", now
+        return ("다음 월요일" if days == 7 else f"{nxt.strftime('%-m/%-d')} (월)"), nxt
+
+    if frequency == "weekly_friday":
+        target = 4  # Friday
+        days = (target - now.weekday()) % 7 or 7
+        nxt = now + timedelta(days=days)
+        if now.weekday() == target:
+            return "오늘 (금요일)", now
+        return f"{nxt.strftime('%-m/%-d')} (금)", nxt
+
+    if frequency == "monthly_first":
+        # 다음 달 1일 (이번 달 1일이 지났으면)
+        if now.day == 1:
+            return "오늘 (1일)", now
+        if now.month == 12:
+            nxt = now.replace(year=now.year + 1, month=1, day=1)
+        else:
+            nxt = now.replace(month=now.month + 1, day=1)
+        return f"{nxt.strftime('%-m/%-d')} (1일)", nxt
+
+    if frequency == "monthly_last":
+        # 이번 달 말일
+        if now.month == 12:
+            last_day = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            last_day = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
+        if now.date() == last_day.date():
+            return "오늘 (말일)", now
+        if now.date() > last_day.date():
+            # 다음 달 말일
+            if last_day.month == 12:
+                nxt = last_day.replace(year=last_day.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                nxt = last_day.replace(month=last_day.month + 1, day=1) - timedelta(days=1)
+            return f"{nxt.strftime('%-m/%-d')} (말일)", nxt
+        return f"{last_day.strftime('%-m/%-d')} (말일)", last_day
+
+    return "정의되지 않음", now
+
+
 def calc_auto_buy_summary(portfolio: dict, prices: dict, usd_krw: float) -> list[dict]:
-    """자동매수 현황 계산"""
+    """자동매수 현황 계산. 5가지 주기 지원."""
     items = []
     now = datetime.now(timezone(timedelta(hours=9)))
 
     for account in portfolio["accounts"]:
         for h in account["holdings"]:
             ab = h.get("auto_buy")
-            # auto_buy 메타가 정의된 종목은 enabled 여부 무관하게 카드에 표시
             if not ab:
                 continue
 
             enabled = bool(ab.get("enabled"))
+            frequency = ab.get("frequency") or "daily_weekday"
             ticker = h.get("ticker")
             price_info = _get_price(ticker, prices, usd_krw)
             current_price = price_info.get("price")
@@ -72,59 +199,43 @@ def calc_auto_buy_summary(portfolio: dict, prices: dict, usd_krw: float) -> list
             account_name = account["name"]
             holding_key = ticker or h["name"]
 
-            if ab["frequency"] == "daily_weekday":
-                next_day = now
-                while next_day.weekday() >= 5 or (next_day.date() == now.date() and now.hour >= 22):
-                    next_day = next_day + timedelta(days=1)
-                if next_day.date() == now.date():
-                    next_day_str = "오늘"
-                else:
-                    next_day_str = next_day.strftime("%-m/%-d")
+            next_label, _ = _next_buy_date(frequency, now)
 
-                est_shares = None
-                if current_price and ab.get("amount_usd"):
-                    est_shares = round(ab["amount_usd"] / current_price, 6)
+            # 금액·통화 결정
+            amount_usd = ab.get("amount_usd")
+            amount_krw = ab.get("amount_krw")
+            if amount_usd is not None:
+                currency = "USD"
+                amount_str = f"${amount_usd}"
+                amount_krw_calc = round(amount_usd * usd_krw) if usd_krw else None
+            else:
+                currency = "KRW"
+                amount_str = f"₩{(amount_krw or 0):,}"
+                amount_krw_calc = amount_krw
 
-                items.append({
-                    "name": h["name"],
-                    "ticker": ticker,
-                    "account_name": account_name,
-                    "holding_key": holding_key,
-                    "enabled": enabled,
-                    "frequency": "매 미국 영업일",
-                    "amount": f"${ab.get('amount_usd', 0)}",
-                    "amount_krw": round(ab.get("amount_usd", 0) * usd_krw) if usd_krw else None,
-                    "next_date": next_day_str if enabled else "정지됨",
-                    "est_shares_per_buy": est_shares if enabled else None,
-                    "est_shares_note": "현재가 기준 예상",
-                    "currency": "USD",
-                })
+            # 예상 매수 수량
+            est_shares = None
+            if current_price and current_price > 0:
+                if currency == "USD" and amount_usd:
+                    est_shares = round(amount_usd / current_price, 6)
+                elif currency == "KRW" and amount_krw:
+                    est_shares = round(amount_krw / current_price, 2)
 
-            elif ab["frequency"] == "weekly_monday":
-                days_until_monday = (7 - now.weekday()) % 7 or 7
-                next_monday = now + timedelta(days=days_until_monday)
-                next_day_str = "다음 월요일" if days_until_monday == 7 else f"{next_monday.strftime('%-m/%-d')} (월)"
-                if now.weekday() == 0:
-                    next_day_str = "오늘 (월요일)"
-
-                est_shares = None
-                if current_price and ab.get("amount_krw"):
-                    est_shares = round(ab["amount_krw"] / current_price, 2)
-
-                items.append({
-                    "name": h["name"],
-                    "ticker": ticker,
-                    "account_name": account_name,
-                    "holding_key": holding_key,
-                    "enabled": enabled,
-                    "frequency": "매주 월요일",
-                    "amount": f"₩{ab.get('amount_krw', 0):,}",
-                    "amount_krw": ab.get("amount_krw"),
-                    "next_date": next_day_str if enabled else "정지됨",
-                    "est_shares_per_buy": est_shares if enabled else None,
-                    "est_shares_note": "현재가 기준 예상",
-                    "currency": "KRW",
-                })
+            items.append({
+                "name": h["name"],
+                "ticker": ticker,
+                "account_name": account_name,
+                "holding_key": holding_key,
+                "enabled": enabled,
+                "frequency": FREQ_LABELS.get(frequency, frequency),
+                "frequency_key": frequency,  # 프론트엔드 편집용
+                "amount": amount_str,
+                "amount_krw": amount_krw_calc,
+                "next_date": next_label if enabled else "정지됨",
+                "est_shares_per_buy": est_shares if enabled else None,
+                "est_shares_note": "현재가 기준 예상",
+                "currency": currency,
+            })
 
     return items
 
@@ -217,6 +328,17 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
     # 종목별 합산
     holdings_merged: dict[str, dict] = {}
 
+    # 자산군 / 지역 비중 (메타가 있는 종목만 합산)
+    class_totals: dict[str, float] = {}
+    region_totals: dict[str, float] = {}
+
+    def _accumulate_meta(h: dict, value_krw: float, default_region: str) -> None:
+        """첫 번째 루프 안에서 자산군·지역 비중을 함께 집계 (중복 계산 방지)"""
+        cls = h.get("asset_class") or "미분류"
+        reg = h.get("region") or default_region
+        class_totals[cls] = class_totals.get(cls, 0) + value_krw
+        region_totals[reg] = region_totals.get(reg, 0) + value_krw
+
     for account in portfolio["accounts"]:
         account_value_krw = 0
         account_cost_krw = 0
@@ -235,6 +357,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                 account_value_krw += snap_val
                 total_value_krw += snap_val
                 total_usd_value += snap_val_usd
+                _accumulate_meta(h, snap_val, "미국")
 
                 holdings_data.append({
                     "name": h["name"],
@@ -267,6 +390,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                 account_cost_krw += buy_amt
                 total_value_krw += snap_val
                 total_cost_krw += buy_amt
+                _accumulate_meta(h, snap_val, "국내")
 
                 holdings_data.append({
                     "name": h["name"],
@@ -344,6 +468,9 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             if day_change_krw:
                 total_day_change_krw += day_change_krw
 
+            # 자산군/지역 메타 집계
+            _accumulate_meta(h, value_krw, "미국" if price_currency == "USD" else "국내")
+
             # 종목별 합산
             merged_key = ticker
             if merged_key not in holdings_merged:
@@ -385,6 +512,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         accounts_data.append({
             "name": account["name"],
             "type": account.get("type"),
+            "currency": account.get("currency", "KRW"),
             "value_krw": round(account_value_krw),
             "cost_krw": round(account_cost_krw),
             "profit_krw": round(account_profit_krw),
@@ -395,8 +523,14 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         })
 
     # 환율 변동분 (USD 보유분 × (오늘 환율 - 전일 환율))
+    # 비정상 환율 (전일 대비 ±10% 초과)은 데이터 오류로 보고 무시
     fx_day_change_krw = 0
-    if usd_krw_prev and usd_krw_prev > 0 and total_usd_value > 0:
+    if (
+        usd_krw_prev
+        and usd_krw_prev > 0
+        and total_usd_value > 0
+        and abs(usd_krw - usd_krw_prev) / usd_krw_prev < 0.10
+    ):
         fx_day_change_krw = total_usd_value * (usd_krw - usd_krw_prev)
         total_day_change_krw += fx_day_change_krw
 
@@ -424,6 +558,18 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
     # 비중 계산은 투자 자산만 (부동산 제외) — 도넛 차트 합계가 100%가 되도록
     invest_value_krw = total_value_krw - re_equity_krw
 
+    # ── 프론트엔드 토글용 사전 계산값 ──
+    # DC/퇴직 합산 (Header의 '퇴직연금 제외' 토글에 사용)
+    dc_value_krw = 0
+    dc_cost_krw = 0
+    dc_day_change_krw = 0
+    for acc in accounts_data:
+        t = acc.get("type", "")
+        if any(k in t for k in ("DC", "퇴직")):
+            dc_value_krw += acc["value_krw"]
+            dc_cost_krw += acc["cost_krw"]
+            dc_day_change_krw += acc["day_change_krw"]
+
     # 종목별 비중 (상위 10)
     sorted_holdings = sorted(holdings_merged.values(), key=lambda x: x["value_krw"], reverse=True)[:10]
     for item in sorted_holdings:
@@ -445,35 +591,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
 
     total_day_change_pct = (total_day_change_krw / total_value_krw * 100) if total_value_krw else None
 
-    # 자산군 / 지역 비중 (메타가 있는 종목만 합산, 미입력은 '미분류')
-    class_totals: dict[str, float] = {}
-    region_totals: dict[str, float] = {}
-    for account in portfolio["accounts"]:
-        currency = account.get("currency", "KRW")
-        for h in account["holdings"]:
-            # 평가금액 산출 (위 루프에서 못 받아오니 별도)
-            ticker = h.get("ticker")
-            shares = h.get("shares")
-            snap_usd = h.get("snapshot_value_usd")
-            snap = h.get("snapshot_value_krw")
-            if snap_usd and not ticker:
-                value_krw = snap_usd * usd_krw
-            elif snap and not ticker:
-                value_krw = snap
-            elif ticker and shares:
-                p = prices.get(ticker, {})
-                price = p.get("price")
-                if price is None:
-                    price = h.get("avg_price_usd" if currency == "USD" else "avg_price_krw") or 0
-                value_native = shares * price
-                value_krw = value_native * (usd_krw if currency == "USD" else 1)
-            else:
-                continue
-            cls = h.get("asset_class") or "미분류"
-            reg = h.get("region") or ("미국" if currency == "USD" else "국내")
-            class_totals[cls] = class_totals.get(cls, 0) + value_krw
-            region_totals[reg] = region_totals.get(reg, 0) + value_krw
-
+    # 자산군 / 지역 비중 — 위 첫 번째 루프의 _accumulate_meta가 이미 집계 완료
     def _to_weights(d: dict[str, float]) -> list[dict]:
         if not d or invest_value_krw == 0:
             return []
@@ -519,6 +637,10 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
     else:
         day_change_label = "오늘 등락"
 
+    # 투자(주식·ETF·예수금·예금 등)만, 부동산·DC 제외
+    invest_only_value = total_value_krw - re_equity_krw - dc_value_krw
+    invest_only_cost  = total_cost_krw  - re_cost_krw   - dc_cost_krw
+
     return {
         "total_value_krw": round(total_value_krw),
         "total_cost_krw": round(total_cost_krw),
@@ -527,6 +649,12 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "real_estate_cost_krw": round(re_cost_krw),
         "real_estate_gross_value_krw": round(re_gross_value_krw),
         "real_estate_loan_krw": round(re_loan_krw),
+        # 프론트 토글용 사전 계산 (Header / GoalCard에서 즉시 사용)
+        "dc_value_krw": round(dc_value_krw),
+        "dc_cost_krw": round(dc_cost_krw),
+        "dc_day_change_krw": round(dc_day_change_krw),
+        "invest_only_value_krw": round(invest_only_value),
+        "invest_only_cost_krw": round(invest_only_cost),
         "cash_assets": portfolio.get("cash_assets"),
         "cash_total_krw": round(cash_total_krw),
         "total_profit_pct": round(total_profit_pct, 2) if total_profit_pct is not None else None,

@@ -58,3 +58,33 @@ export function fmtAbsTime(isoStr: string | null): string {
   if (isNaN(d.getTime())) return '-';
   return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
+
+/**
+ * 계좌 분류 단일 진입점 — type과 name을 함께 보고 카테고리·정렬 순서를 결정한다.
+ * Header / HoldingsList / App.tsx에서 중복되던 로직을 통합.
+ *
+ * 우선순위: 연금저축 → DC/퇴직 → IRP/연금 → 주식·ISA → 적금·예금 → 기타
+ *  - '삼성증권 IRP'처럼 '증권' 단어가 포함돼도 IRP로 분류되도록 IRP 먼저 체크
+ */
+export type AccountCategory = '투자' | '개인연금' | '퇴직연금' | '저축' | '기타';
+
+export function categorizeAccount(type: string, name = ''): AccountCategory {
+  const s = `${type} ${name}`;
+  if (/연금저축/i.test(s)) return '개인연금';
+  if (/DC|퇴직|확정기여|확정급여|DB형/i.test(s)) return '퇴직연금';
+  if (/IRP|연금/i.test(s)) return '개인연금';
+  if (/주식|ISA|CMA|기본계좌|증권/i.test(s)) return '투자';
+  if (/적금|예금|저축/i.test(s)) return '저축';
+  return '기타';
+}
+
+export const CATEGORY_ORDER: AccountCategory[] = ['투자', '개인연금', '퇴직연금', '저축', '기타'];
+
+/** 장기 보유 계좌(연금 + 퇴직) 판별 — GoalCard / Header DC 토글에서 사용 */
+export function isLongTermAccount(type: string): boolean {
+  return /IRP|DC|퇴직|연금|연금저축/i.test(type);
+}
+
+export function isRetirementAccount(type: string): boolean {
+  return /DC|퇴직/i.test(type);
+}

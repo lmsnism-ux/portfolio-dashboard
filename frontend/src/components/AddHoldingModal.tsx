@@ -14,7 +14,7 @@ const REGIONS = ['미국', '국내', '글로벌', '신흥국', '기타'];
 
 export default function AddHoldingModal({ account, onClose }: Props) {
   const queryClient = useQueryClient();
-  const accountIsUsd = (account as any).currency === 'USD' || account.name.includes('토스증권');
+  const accountIsUsd = account.currency === 'USD';
 
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
@@ -60,11 +60,11 @@ export default function AddHoldingModal({ account, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
+        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between">

@@ -64,22 +64,24 @@ export default function TradeModal({ account, holding, onClose }: Props) {
   const save = () => {
     if (!preview || (preview as any).error) return;
     const { newShares, newAvg } = preview as { newShares: number; newAvg: number };
+    // 보유 수량 0 → 평단 의미 없음, null로 초기화
+    const finalAvg: number | null = newShares > 0 ? newAvg : null;
     mutation.mutate({
       account_name: account.name,
       holding_key: holding.ticker || holding.name,
       shares: newShares,
-      avg_price_krw: !isUsd ? newAvg : undefined,
-      avg_price_usd: isUsd ? newAvg : undefined,
+      avg_price_krw: !isUsd ? finalAvg : undefined,
+      avg_price_usd: isUsd ? finalAvg : undefined,
     });
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
+        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between">

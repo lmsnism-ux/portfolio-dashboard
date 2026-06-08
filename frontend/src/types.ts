@@ -40,6 +40,8 @@ export interface IrpInfo {
 export interface AccountData {
   name: string;
   type: string;
+  /** 계좌 기본 통화 (KRW/USD). 백엔드 portfolio.json에 정의된 값. */
+  currency?: string;
   value_krw: number;
   cost_krw: number;
   profit_krw: number;
@@ -70,7 +72,10 @@ export interface AutoBuySummary {
   account_name: string;
   holding_key: string;
   enabled: boolean;
+  /** 라벨 (예: '매 영업일') */
   frequency: string;
+  /** 백엔드 키 (예: 'daily_weekday') — 편집 폼 초기값으로 사용 */
+  frequency_key?: string;
   amount: string;
   amount_krw: number | null;
   next_date: string;
@@ -149,6 +154,13 @@ export interface PortfolioSummary {
   real_estate_cost_krw?: number;
   real_estate_gross_value_krw?: number;
   real_estate_loan_krw?: number;
+  /** DC/퇴직 계좌 합계 (Header DC 토글에 사용) */
+  dc_value_krw?: number;
+  dc_cost_krw?: number;
+  dc_day_change_krw?: number;
+  /** 투자(부동산·DC 제외) 합계 — Header / GoalCard에서 즉시 사용 */
+  invest_only_value_krw?: number;
+  invest_only_cost_krw?: number;
   cash_assets?: CashAssetsData;
   cash_total_krw?: number;
   calculated_at: string;

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Pencil, Plus, ChevronUp, ChevronDown, ArrowLeftRight, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { chartColor, fmtKRW, fmtPct, colorClass } from '../utils';
+import { chartColor, fmtKRW, fmtPct, colorClass, categorizeAccount, CATEGORY_ORDER } from '../utils';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 import { deleteHolding } from '../api';
 import IrpMonitor from './IrpMonitor';
@@ -18,18 +18,7 @@ const CAT_STYLE: Record<string, { accent: string; headerBg: string }> = {
   '기타':    { accent: '#64748b', headerBg: 'rgba(100,116,139,0.06)' },
 };
 
-const DEFAULT_CATS = ['투자', '개인연금', '퇴직연금', '저축', '기타'];
-
-function topCat(type: string, name = ''): string {
-  const s = `${type} ${name}`;
-  // IRP/퇴직 계열을 먼저 체크 — '삼성증권 IRP'처럼 '증권'이 포함돼도 정확히 분류
-  if (/연금저축/i.test(s)) return '개인연금';
-  if (/DC|퇴직|확정기여|확정급여|DB형/i.test(s)) return '퇴직연금';
-  if (/IRP|연금/i.test(s)) return '개인연금';
-  if (/주식|ISA|CMA|기본계좌|증권/i.test(s)) return '투자';
-  if (/적금|예금|저축/i.test(s)) return '저축';
-  return '기타';
-}
+const DEFAULT_CATS = [...CATEGORY_ORDER];
 
 // 증권사 약칭 추출 (계좌명 앞 2글자)
 function brokerAbbr(accName: string): string {
@@ -91,11 +80,12 @@ interface Props {
   onAdd: (account: AccountData) => void;
   onTrade: (account: AccountData, holding: HoldingData) => void;
   onMoveAccount: (idx: number, dir: -1 | 1) => void;
+  onAddAccount?: () => void;
 }
 
 type PeriodMode = '오늘' | '전체';
 
-export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount }: Props) {
+export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount, onAddAccount }: Props) {
   const queryClient = useQueryClient();
   const deleteMutation = useMutation({
     mutationFn: ({ accName, key }: { accName: string; key: string }) =>
@@ -105,6 +95,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
 
   const [editMode, setEditMode] = useState(false);
   const [periodMode, setPeriodMode] = useState<PeriodMode>('전체');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [hidden, setHidden] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); }
@@ -213,7 +204,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
     const activeCatOrder = editMode ? draftCatOrder : catOrder;
     const map: Record<string, AccountData[]> = {};
     data.accounts.forEach(acc => {
-      const cat = topCat(acc.type, acc.name);
+      const cat = categorizeAccount(acc.type, acc.name);
       (map[cat] ??= []).push(acc);
     });
     return activeCatOrder
@@ -251,6 +242,15 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
         <div className="flex items-center gap-2">
           {editMode ? (
             <>
+              {onAddAccount && (
+                <button
+                  onClick={onAddAccount}
+                  className="text-xs font-medium text-toss-blue px-3 py-1.5 rounded-full border border-toss-blue/30 hover:border-toss-blue bg-toss-blue-soft flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  <Plus size={11} />
+                  계좌 추가
+                </button>
+              )}
               <button
                 onClick={cancel}
                 className="text-xs text-toss-text-tertiary px-3 py-1.5 rounded-full border border-toss-border active:scale-95 transition-all"
@@ -493,22 +493,41 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                             {editMode ? (
                               /* 편집 모드: 삭제 + 토글 + 순서 */
                               <div className="flex items-center gap-3 shrink-0">
-                                <button
-                                  onClick={() => {
-                                    if (confirm(`'${h.name}' 종목을 삭제할까요?`)) {
-                                      deleteMutation.mutate({ accName: acc.name, key: h.ticker || h.name });
-                                    }
-                                  }}
-                                  className="p-1.5 rounded-full hover:bg-toss-down/10 active:scale-90 transition-all"
-                                  title="삭제"
-                                >
-                                  <Trash2 size={14} className="text-toss-down" />
-                                </button>
+                                {pendingDeleteId === id ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-toss-down font-semibold">삭제?</span>
+                                    <button
+                                      onClick={() => {
+                                        deleteMutation.mutate({ accName: acc.name, key: h.ticker || h.name });
+                                        setPendingDeleteId(null);
+                                      }}
+                                      className="text-[11px] font-semibold text-white bg-toss-down px-2 py-1 rounded-full active:scale-95"
+                                    >
+                                      확인
+                                    </button>
+                                    <button
+                                      onClick={() => setPendingDeleteId(null)}
+                                      className="text-[11px] text-toss-text-tertiary px-2 py-1 rounded-full border border-toss-border active:scale-95"
+                                    >
+                                      취소
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setPendingDeleteId(id)}
+                                    aria-label={`${h.name} 삭제`}
+                                    className="p-1.5 rounded-full hover:bg-toss-down/10 active:scale-90 transition-all"
+                                    title="삭제"
+                                  >
+                                    <Trash2 size={14} className="text-toss-down" />
+                                  </button>
+                                )}
                                 <Toggle on={!isHidden} onToggle={() => toggleDraftHidden(id)} />
                                 <div className="flex flex-col gap-0">
                                   <button
                                     onClick={() => moveHolding(acc.name, holdings, hi, -1)}
                                     disabled={hi === 0}
+                                    aria-label="위로"
                                     className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90 transition-all"
                                   >
                                     <ChevronUp size={14} className="text-toss-text-tertiary" />
@@ -516,6 +535,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                   <button
                                     onClick={() => moveHolding(acc.name, holdings, hi, 1)}
                                     disabled={hi === holdings.length - 1}
+                                    aria-label="아래로"
                                     className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90 transition-all"
                                   >
                                     <ChevronDown size={14} className="text-toss-text-tertiary" />

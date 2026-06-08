@@ -10,10 +10,14 @@ import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
+import RebalanceCard from './components/RebalanceCard';
+import ProfitHeatmap from './components/ProfitHeatmap';
 import EditHoldingModal from './components/EditHoldingModal';
 import AddHoldingModal from './components/AddHoldingModal';
+import AddAccountModal from './components/AddAccountModal';
 import TradeModal from './components/TradeModal';
 import { DashboardSkeleton } from './components/Skeletons';
+import { isLongTermAccount } from './utils';
 import type { AccountData, HoldingData } from './types';
 
 const HIDE_KEY = 'pd_hide_assets';
@@ -35,6 +39,7 @@ export default function App() {
     null,
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
   const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData } | null>(null);
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
   const [loanOn, setLoanOn] = useState(() => localStorage.getItem(LOAN_KEY) !== '0');
@@ -171,12 +176,9 @@ export default function App() {
         {/* 목표/자동매수 */}
         {(() => {
           const longTermKrw = data.accounts
-            .filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type))
+            .filter(a => isLongTermAccount(a.type))
             .reduce((s, a) => s + a.value_krw, 0);
-          const dcKrw = dcOn ? 0 : data.accounts
-            .filter(a => /DC|퇴직/i.test(a.type))
-            .reduce((s, a) => s + a.value_krw, 0);
-          // 목표 자산은 순수 금융자산 기준 — 부동산 순자산 항상 제외
+          const dcKrw = dcOn ? 0 : (data.dc_value_krw ?? 0);
           const reEquity = data.real_estate_equity_krw ?? 0;
           return (
             <GoalCard
@@ -191,6 +193,12 @@ export default function App() {
 
         <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
 
+        {/* 리밸런싱 도우미 */}
+        <RebalanceCard data={data} hideAssets={hideAssets} />
+
+        {/* 월별 수익 히트맵 (히스토리 14일 이상일 때만 자동 표시) */}
+        <ProfitHeatmap />
+
         {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
         <HoldingsList
           data={data}
@@ -199,6 +207,7 @@ export default function App() {
           onAdd={(acc) => setAdding(acc)}
           onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
           onMoveAccount={moveAccount}
+          onAddAccount={() => setAddingAccount(true)}
         />
 
         <div className="h-4" />
@@ -212,6 +221,7 @@ export default function App() {
         />
       )}
       {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
+      {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
       {trading && (
         <TradeModal
           account={trading.account}

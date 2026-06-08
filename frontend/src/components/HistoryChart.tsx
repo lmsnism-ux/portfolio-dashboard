@@ -423,51 +423,57 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 {backfillMutation.isPending ? '계산 중...' : '과거 30일 추이 가져오기'}
               </button>
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={filtered} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#5B9CF6" stopOpacity={0.35} />
-                    <stop offset="60%" stopColor="#5B9CF6" stopOpacity={0.08} />
-                    <stop offset="100%" stopColor="#5B9CF6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="var(--color-toss-border)" strokeDasharray="4 4" vertical={false} strokeOpacity={0.6} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                  tickFormatter={v => v.slice(5)}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={32}
-                />
-                <YAxis
-                  hide={hideAssets}
-                  tick={{ fontSize: 10, fill: 'var(--color-toss-text-tertiary)' }}
-                  tickFormatter={v => {
-                    const abs = Math.abs(v);
-                    if (abs >= 1_0000_0000) return `${(v / 1_0000_0000).toFixed(1)}억`;
-                    return `${Math.round(v / 10000)}만`;
-                  }}
-                  tickLine={false}
-                  axisLine={false}
-                  width={44}
-                  domain={['dataMin', 'dataMax']}
-                />
-                <Tooltip content={<ToolTipBox hideAssets={hideAssets} />} />
-                <Area
-                  type="monotone"
-                  dataKey="total_value_krw"
-                  stroke="#5B9CF6"
-                  strokeWidth={2.5}
-                  fill="url(#histGrad)"
-                  activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#5B9CF6' }}
-                  dot={filtered.length === 1 ? { r: 5, fill: '#5B9CF6', strokeWidth: 0 } : false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
+          ) : (() => {
+            // 기간 손익 부호에 따라 색상 결정 (한국식: 상승=빨강, 하락=파랑)
+            const diff = periodChange?.diff ?? (range === 'TODAY' ? data.total_day_change_krw : 0);
+            const isPos = diff >= 0;
+            const stroke = isPos ? '#F04452' : '#5B9CF6';
+            return (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={filtered} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={stroke} stopOpacity={0.35} />
+                      <stop offset="60%" stopColor={stroke} stopOpacity={0.08} />
+                      <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="var(--color-toss-border)" strokeDasharray="4 4" vertical={false} strokeOpacity={0.6} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: 'var(--color-toss-text-tertiary)' }}
+                    tickFormatter={v => v.slice(5)}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={32}
+                  />
+                  <YAxis
+                    hide={hideAssets}
+                    tick={{ fontSize: 11, fill: 'var(--color-toss-text-tertiary)' }}
+                    tickFormatter={v => {
+                      const abs = Math.abs(v);
+                      if (abs >= 1_0000_0000) return `${(v / 1_0000_0000).toFixed(1)}억`;
+                      return `${Math.round(v / 10000)}만`;
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={44}
+                    domain={['dataMin', 'dataMax']}
+                  />
+                  <Tooltip content={<ToolTipBox hideAssets={hideAssets} />} />
+                  <Area
+                    type="monotone"
+                    dataKey="total_value_krw"
+                    stroke={stroke}
+                    strokeWidth={2.5}
+                    fill="url(#histGrad)"
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: stroke }}
+                    dot={filtered.length === 1 ? { r: 5, fill: stroke, strokeWidth: 0 } : false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            );
+          })()}
         </div>
 
         {/* 기간별 수익 기여 종목 */}
