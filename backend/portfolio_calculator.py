@@ -403,6 +403,16 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         fx_day_change_krw = total_usd_value * (usd_krw - usd_krw_prev)
         total_day_change_krw += fx_day_change_krw
 
+    # 부동산 순자산 (현재가 - 대출잔액) / 매입가를 자산·비용에 합산
+    real_estate = portfolio.get("real_estate")
+    if real_estate:
+        for prop in real_estate.get("properties", []):
+            cur = prop.get("current_value_krw", 0)
+            purchase = prop.get("purchase_price_krw", 0)
+            loan_bal = (prop.get("loan") or {}).get("balance_krw", 0)
+            total_value_krw += cur - loan_bal   # 순자산(자본)
+            total_cost_krw  += purchase - loan_bal
+
     total_profit_krw = total_value_krw - total_cost_krw
     total_profit_pct = (total_profit_krw / total_cost_krw * 100) if total_cost_krw > 0 else None
 
