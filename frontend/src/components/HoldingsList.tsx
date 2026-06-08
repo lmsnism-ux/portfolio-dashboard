@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Pencil, Plus, ChevronUp, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { Pencil, Plus, ChevronUp, ChevronDown, ArrowLeftRight, Trash2 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { chartColor, fmtKRW, fmtPct, colorClass } from '../utils';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
+import { deleteHolding } from '../api';
 import IrpMonitor from './IrpMonitor';
 
 const HIDDEN_KEY = 'pd_hidden';
@@ -10,12 +12,13 @@ const CAT_ORDER_KEY = 'pd_catorder';
 
 const DEFAULT_CATS = ['투자', '개인연금', '퇴직연금', '저축', '기타'];
 
-function topCat(type: string): string {
-  if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return '투자';
-  if (/IRP|연금저축/i.test(type)) return '개인연금';
-  if (/DC|퇴직/i.test(type)) return '퇴직연금';
-  if (/연금/i.test(type)) return '개인연금';
-  if (/적금|예금|저축/i.test(type)) return '저축';
+function topCat(type: string, name = ''): string {
+  const s = `${type} ${name}`;
+  if (/주식|ISA|CMA|기본계좌|증권/i.test(s)) return '투자';
+  if (/연금저축/i.test(s)) return '개인연금';
+  if (/DC|퇴직|확정기여|확정급여|DB형/i.test(s)) return '퇴직연금';
+  if (/IRP|연금/i.test(s)) return '개인연금';
+  if (/적금|예금|저축/i.test(s)) return '저축';
   return '기타';
 }
 
@@ -84,6 +87,13 @@ interface Props {
 type PeriodMode = '오늘' | '전체';
 
 export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onMoveAccount }: Props) {
+  const queryClient = useQueryClient();
+  const deleteMutation = useMutation({
+    mutationFn: ({ accName, key }: { accName: string; key: string }) =>
+      deleteHolding(accName, key),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
+  });
+
   const [editMode, setEditMode] = useState(false);
   const [periodMode, setPeriodMode] = useState<PeriodMode>('전체');
 
@@ -194,7 +204,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
     const activeCatOrder = editMode ? draftCatOrder : catOrder;
     const map: Record<string, AccountData[]> = {};
     data.accounts.forEach(acc => {
-      const cat = topCat(acc.type);
+      const cat = topCat(acc.type, acc.name);
       (map[cat] ??= []).push(acc);
     });
     return activeCatOrder
@@ -338,16 +348,26 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {!editMode && (
-                          <div className="text-right">
-                            <span className="num text-xs font-medium text-toss-text-secondary">
-                              {hideAssets ? '••••' : fmtKRW(acc.value_krw)}
-                            </span>
-                            {acc.profit_pct !== null && (
-                              <span className={`num text-[10px] ml-1.5 ${colorClass(acc.profit_pct)}`}>
-                                {fmtPct(acc.profit_pct)}
+                          <>
+                            <div className="text-right">
+                              <span className="num text-xs font-medium text-toss-text-secondary">
+                                {hideAssets ? '••••' : fmtKRW(acc.value_krw)}
                               </span>
-                            )}
-                          </div>
+                              {acc.profit_pct !== null && (
+                                <span className={`num text-[10px] ml-1.5 ${colorClass(acc.profit_pct)}`}>
+                                  {fmtPct(acc.profit_pct)}
+                                </span>
+                              )}
+                            </div>
+                            {/* 뷰 모드에서도 종목 추가 버튼 상시 노출 */}
+                            <button
+                              onClick={() => onAdd(acc)}
+                              className="p-1.5 rounded-full bg-toss-blue-soft hover:bg-toss-blue/20 active:scale-90 transition-all"
+                              title="종목 추가"
+                            >
+                              <Plus size={13} className="text-toss-blue" />
+                            </button>
+                          </>
                         )}
                         {editMode && (
                           <div className="flex items-center gap-1">
@@ -437,14 +457,18 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                             </div>
 
                             {editMode ? (
-                              /* 편집 모드: 연필 + 토글 + 순서 */
+                              /* 편집 모드: 삭제 + 토글 + 순서 */
                               <div className="flex items-center gap-3 shrink-0">
                                 <button
-                                  onClick={() => onEdit(acc, h)}
-                                  className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
-                                  title="수정"
+                                  onClick={() => {
+                                    if (confirm(`'${h.name}' 종목을 삭제할까요?`)) {
+                                      deleteMutation.mutate({ accName: acc.name, key: h.ticker || h.name });
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-full hover:bg-toss-down/10 active:scale-90 transition-all"
+                                  title="삭제"
                                 >
-                                  <Pencil size={14} className="text-toss-text-tertiary" />
+                                  <Trash2 size={14} className="text-toss-down" />
                                 </button>
                                 <Toggle on={!isHidden} onToggle={() => toggleDraftHidden(id)} />
                                 <div className="flex flex-col gap-0">
@@ -505,16 +529,25 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                     </>
                                   )}
                                 </div>
-                                {/* 빠른 매수/매도 버튼 (스냅샷 종목 제외) */}
-                                {!h.is_snapshot && (
+                                {/* 빠른 수정/거래 버튼 — 뷰 모드에서 상시 노출 */}
+                                <div className="flex flex-col gap-0.5">
                                   <button
-                                    onClick={() => onTrade(acc, h)}
-                                    className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
-                                    title="매수/매도"
+                                    onClick={() => onEdit(acc, h)}
+                                    className="p-1 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
+                                    title="수정"
                                   >
-                                    <ArrowLeftRight size={13} className="text-toss-text-tertiary" />
+                                    <Pencil size={12} className="text-toss-text-tertiary" />
                                   </button>
-                                )}
+                                  {!h.is_snapshot && (
+                                    <button
+                                      onClick={() => onTrade(acc, h)}
+                                      className="p-1 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
+                                      title="매수/매도"
+                                    >
+                                      <ArrowLeftRight size={12} className="text-toss-text-tertiary" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>

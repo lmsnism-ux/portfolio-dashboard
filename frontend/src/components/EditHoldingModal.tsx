@@ -20,6 +20,9 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
   const [avgPrice, setAvgPrice] = useState<string>(
     holding.avg_price !== null ? holding.avg_price.toString() : '',
   );
+  const [snapshotVal, setSnapshotVal] = useState<string>(
+    holding.is_snapshot ? (holding.value_krw?.toString() ?? '') : '',
+  );
   const [autoBuyEnabled, setAutoBuyEnabled] = useState<boolean>(
     holding.auto_buy?.enabled ?? false,
   );
@@ -58,12 +61,16 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
     const avgNum = parseFloat(avgPrice);
     const amtNum = parseFloat(autoBuyAmount);
 
+    const snapNum = parseFloat(snapshotVal);
+
     mutation.mutate({
       account_name: account.name,
       holding_key: holding.ticker || holding.name,
       shares: Number.isFinite(sharesNum) ? sharesNum : null,
       avg_price_krw: !isUsd && Number.isFinite(avgNum) ? avgNum : undefined,
       avg_price_usd: isUsd && Number.isFinite(avgNum) ? avgNum : undefined,
+      snapshot_value_krw: holding.is_snapshot && !isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
+      snapshot_value_usd: holding.is_snapshot && isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
       auto_buy: {
         enabled: autoBuyEnabled,
         amount_usd: isUsd && Number.isFinite(amtNum) ? amtNum : undefined,
@@ -99,7 +106,19 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
         </div>
 
         <div className="px-5 py-2 space-y-4">
-          {!holding.is_snapshot && (
+          {holding.is_snapshot ? (
+            /* 예수금/스냅샷 종목: 잔액만 편집 */
+            <Field label={`잔액 (${isUsd ? 'USD' : 'KRW'})`}>
+              <input
+                type="number"
+                step="any"
+                value={snapshotVal}
+                onChange={(e) => setSnapshotVal(e.target.value)}
+                className="num w-full bg-toss-bg rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-toss-blue"
+                placeholder={isUsd ? '예: 1500.00' : '예: 500000'}
+              />
+            </Field>
+          ) : (
             <>
               {/* 체결 기록 진입 */}
               <button

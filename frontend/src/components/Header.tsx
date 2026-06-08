@@ -58,7 +58,7 @@ interface Props {
   isRefreshing: boolean;
 }
 
-type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number };
+type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number; price: string | null; priceLabel: string };
 
 function GroupHeaderBadge({ label, pct }: { label: string; pct: number }) {
   const isPos = pct >= 0;
@@ -77,9 +77,10 @@ function GroupHeaderBadge({ label, pct }: { label: string; pct: number }) {
 function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
   const isPos = item.pct >= 0;
   const titleAttr = `${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`;
+  const priceText = item.price ? `${item.priceLabel === '실시간' ? '현재가' : '종가'} ${item.price}` : null;
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-0.5 rounded-md cursor-default shrink-0 border ${
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg cursor-default shrink-0 border ${
         isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
       }`}
       title={titleAttr}
@@ -87,6 +88,9 @@ function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) 
       <span className="text-[10px] text-toss-text-secondary whitespace-nowrap font-medium">
         {shortTickerName(item.name)}
       </span>
+      {priceText && (
+        <span className="text-[10px] text-toss-text-tertiary whitespace-nowrap">{priceText}</span>
+      )}
       <span className={`num text-[10px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
         {isPos ? '+' : ''}{item.pct.toFixed(2)}%
       </span>
@@ -139,7 +143,7 @@ export default function Header({
           const ex = seen.get(h.name);
           const pct = h.day_change_pct as number;
           if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
-            seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd });
+            seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd, price: h.current_price_display, priceLabel: h.price_label });
           }
         });
     });

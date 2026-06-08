@@ -150,6 +150,8 @@ class HoldingUpdate(BaseModel):
     shares: Optional[float] = None
     avg_price_krw: Optional[float] = None
     avg_price_usd: Optional[float] = None
+    snapshot_value_krw: Optional[float] = None   # 예수금/스냅샷 잔액
+    snapshot_value_usd: Optional[float] = None
     auto_buy: Optional[AutoBuyUpdate] = None
     remove_auto_buy: bool = False  # True → auto_buy 키 완전 제거
 
@@ -182,6 +184,10 @@ async def update_holding(update: HoldingUpdate):
             holding["avg_price_krw"] = update.avg_price_krw
         if update.avg_price_usd is not None:
             holding["avg_price_usd"] = update.avg_price_usd
+        if update.snapshot_value_krw is not None:
+            holding["snapshot_value_krw"] = update.snapshot_value_krw
+        if update.snapshot_value_usd is not None:
+            holding["snapshot_value_usd"] = update.snapshot_value_usd
         if update.remove_auto_buy:
             holding.pop("auto_buy", None)
         elif update.auto_buy is not None:

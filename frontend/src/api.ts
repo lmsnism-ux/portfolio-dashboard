@@ -33,6 +33,8 @@ export interface HoldingPatch {
   shares?: number | null;
   avg_price_krw?: number | null;
   avg_price_usd?: number | null;
+  snapshot_value_krw?: number | null;
+  snapshot_value_usd?: number | null;
   remove_auto_buy?: boolean;
   auto_buy?: {
     enabled: boolean;
