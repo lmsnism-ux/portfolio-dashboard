@@ -2,10 +2,13 @@
 from __future__ import annotations
 import base64
 import json
+import logging
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # 1순위: PORTFOLIO_DATA_DIR (Render Persistent Disk 등), 2순위: 코드 디렉토리
 _DATA_DIR = Path(os.environ.get("PORTFOLIO_DATA_DIR", str(Path(__file__).parent)))
@@ -17,15 +20,21 @@ def _seed_from_env() -> bool:
     """환경변수 PORTFOLIO_JSON_B64 가 있으면 파일과 동기화 (항상 env 우선)."""
     encoded = os.environ.get("PORTFOLIO_JSON_B64")
     if not encoded:
+        logger.warning("PORTFOLIO_JSON_B64 env var not found")
         return False
     try:
         raw = base64.b64decode(encoded).decode("utf-8")
-        json.loads(raw)  # 유효성 체크
+        parsed = json.loads(raw)
+        has_re = "real_estate" in parsed
+        logger.info(f"_seed_from_env: decoded OK, real_estate={has_re}, file_exists={PORTFOLIO_FILE.exists()}")
         if PORTFOLIO_FILE.exists() and PORTFOLIO_FILE.read_text().strip() == raw.strip():
-            return False  # 동일하면 스킵
+            logger.info("_seed_from_env: file identical to env var, skip write")
+            return False
         PORTFOLIO_FILE.write_text(raw)
+        logger.info(f"_seed_from_env: wrote portfolio.json (real_estate={has_re})")
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"_seed_from_env failed: {e}", exc_info=True)
         return False
 
 
