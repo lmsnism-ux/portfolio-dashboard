@@ -129,6 +129,30 @@ export interface ClassWeight {
   weight: number;
 }
 
+export interface TradeRecord {
+  id: number;
+  account_name: string;
+  holding_key: string;
+  name: string;
+  ticker: string | null;
+  side: 'buy' | 'sell';
+  shares: number;
+  price: number | null;
+  currency: string;
+  traded_at: string;
+  recorded_at: string;
+  note: string | null;
+}
+
+export interface TradeAggregate {
+  trade_count: number;
+  total_buy_shares: number;
+  total_buy_amount: number;
+  total_sell_shares: number;
+  net_shares: number;
+  avg_price_from_trades: number | null;
+}
+
 export interface PortfolioSummary {
   total_value_krw: number;
   total_cost_krw: number;

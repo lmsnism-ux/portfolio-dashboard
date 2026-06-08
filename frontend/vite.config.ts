@@ -74,4 +74,20 @@ export default defineConfig({
     host: true,
     port: 4173,
   },
+  build: {
+    // 차트·아이콘 라이브러리를 별도 청크로 분리해 initial bundle 감축
+    // Vite 8(rolldown)은 manualChunks를 function 형태만 허용
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('recharts') || id.includes('d3-')) return 'chart-vendor';
+          if (id.includes('lucide-react')) return 'icons-vendor';
+          if (id.includes('@tanstack/react-query')) return 'query-vendor';
+          if (id.includes('/react-dom/') || id.includes('/react/')) return 'react-vendor';
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
 });

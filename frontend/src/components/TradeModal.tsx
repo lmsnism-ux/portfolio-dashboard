@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X } from 'lucide-react';
-import { patchHolding } from '../api';
+import { X, History } from 'lucide-react';
+import { createTrade } from '../api';
 import type { AccountData, HoldingData } from '../types';
+import TradeHistoryModal from './TradeHistoryModal';
 
 interface Props {
   account: AccountData;
@@ -22,12 +23,14 @@ export default function TradeModal({ account, holding, onClose }: Props) {
   const [side, setSide] = useState<Side>('buy');
   const [qty, setQty] = useState('');
   const [price, setPrice] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const mutation = useMutation({
-    mutationFn: patchHolding,
+    mutationFn: createTrade,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['history'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
       onClose();
     },
   });
@@ -63,15 +66,18 @@ export default function TradeModal({ account, holding, onClose }: Props) {
 
   const save = () => {
     if (!preview || (preview as any).error) return;
-    const { newShares, newAvg } = preview as { newShares: number; newAvg: number };
-    // 보유 수량 0 → 평단 의미 없음, null로 초기화
-    const finalAvg: number | null = newShares > 0 ? newAvg : null;
+    const q = parseFloat(qty);
+    const p = parseFloat(price);
     mutation.mutate({
       account_name: account.name,
       holding_key: holding.ticker || holding.name,
-      shares: newShares,
-      avg_price_krw: !isUsd ? finalAvg : undefined,
-      avg_price_usd: isUsd ? finalAvg : undefined,
+      name: holding.name,
+      ticker: holding.ticker,
+      side,
+      shares: q,
+      price: side === 'buy' ? p : (Number.isFinite(p) ? p : null),
+      currency: isUsd ? 'USD' : 'KRW',
+      apply_to_holding: true,
     });
   };
 
@@ -97,12 +103,23 @@ export default function TradeModal({ account, holding, onClose }: Props) {
                 : ''}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95"
-          >
-            <X size={18} className="text-toss-text-secondary" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-toss-bg hover:bg-toss-blue-soft active:scale-95 transition-all text-[11px] font-semibold text-toss-text-secondary"
+              title="체결 내역"
+            >
+              <History size={12} />
+              내역
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="닫기"
+              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95"
+            >
+              <X size={18} className="text-toss-text-secondary" />
+            </button>
+          </div>
         </div>
 
         <div className="px-5 py-2 space-y-4">
@@ -199,6 +216,16 @@ export default function TradeModal({ account, holding, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      {historyOpen && (
+        <TradeHistoryModal
+          accountName={account.name}
+          holdingKey={holding.ticker || holding.name}
+          holdingName={holding.name}
+          isUsd={isUsd}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }

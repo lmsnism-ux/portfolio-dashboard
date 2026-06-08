@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
@@ -10,15 +10,18 @@ import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
-import RebalanceCard from './components/RebalanceCard';
-import ProfitHeatmap from './components/ProfitHeatmap';
-import EditHoldingModal from './components/EditHoldingModal';
-import AddHoldingModal from './components/AddHoldingModal';
-import AddAccountModal from './components/AddAccountModal';
-import TradeModal from './components/TradeModal';
 import { DashboardSkeleton } from './components/Skeletons';
 import { isLongTermAccount } from './utils';
+import { useAlertTriggers } from './hooks/useAlertTriggers';
 import type { AccountData, HoldingData } from './types';
+
+// 부가 컴포넌트: 첫 화면에 즉시 필요 없음 → lazy load
+const RebalanceCard     = lazy(() => import('./components/RebalanceCard'));
+const ProfitHeatmap     = lazy(() => import('./components/ProfitHeatmap'));
+const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
+const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
+const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
+const TradeModal        = lazy(() => import('./components/TradeModal'));
 
 const HIDE_KEY = 'pd_hide_assets';
 const DARK_KEY = 'pd_dark';
@@ -80,6 +83,9 @@ export default function App() {
     refetchInterval: 7 * 60 * 1000,
     staleTime: 5 * 60 * 1000,
   });
+
+  // 자동매수 D-1 + 가격 변동 임계값 알림 (메뉴에서 활성화 시)
+  useAlertTriggers(data);
 
   const refreshMutation = useMutation({
     mutationFn: triggerRefresh,
@@ -193,11 +199,11 @@ export default function App() {
 
         <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
 
-        {/* 리밸런싱 도우미 */}
-        <RebalanceCard data={data} hideAssets={hideAssets} />
-
-        {/* 월별 수익 히트맵 (히스토리 14일 이상일 때만 자동 표시) */}
-        <ProfitHeatmap />
+        {/* 리밸런싱 도우미 + 히트맵 (lazy load) */}
+        <Suspense fallback={null}>
+          <RebalanceCard data={data} hideAssets={hideAssets} />
+          <ProfitHeatmap />
+        </Suspense>
 
         {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
         <HoldingsList
@@ -213,22 +219,24 @@ export default function App() {
         <div className="h-4" />
       </main>
 
-      {editing && (
-        <EditHoldingModal
-          account={editing.account}
-          holding={editing.holding}
-          onClose={() => setEditing(null)}
-        />
-      )}
-      {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
-      {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
-      {trading && (
-        <TradeModal
-          account={trading.account}
-          holding={trading.holding}
-          onClose={() => setTrading(null)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {editing && (
+          <EditHoldingModal
+            account={editing.account}
+            holding={editing.holding}
+            onClose={() => setEditing(null)}
+          />
+        )}
+        {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
+        {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
+        {trading && (
+          <TradeModal
+            account={trading.account}
+            holding={trading.holding}
+            onClose={() => setTrading(null)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

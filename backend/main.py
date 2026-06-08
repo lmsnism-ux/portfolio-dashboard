@@ -17,6 +17,12 @@ from price_fetcher import refresh_all_prices, get_cached_prices
 from portfolio_calculator import load_portfolio, build_portfolio_summary, save_portfolio
 from history_store import record_snapshot_from_summary, get_history
 from history_backfill import backfill_history
+from trade_store import (
+    insert_trade,
+    list_trades,
+    delete_trade,
+    aggregate_for_holding,
+)
 
 STALE_THRESHOLD_HOURS = 12
 
@@ -473,4 +479,132 @@ async def force_refresh():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# ─────────────────────────────────────────────────────
+# 체결(매수/매도) 내역 엔드포인트 — Phase 6
+# ─────────────────────────────────────────────────────
+class TradeCreate(BaseModel):
+    account_name: str
+    holding_key: str
+    name: str
+    ticker: Optional[str] = None
+    side: str  # 'buy' | 'sell'
+    shares: float
+    price: Optional[float] = None
+    currency: str = "KRW"
+    traded_at: Optional[str] = None
+    note: Optional[str] = None
+    # apply_to_holding=True → 체결 기록과 함께 portfolio.json의 shares/avg_price도 자동 갱신
+    apply_to_holding: bool = True
+
+
+def _recalc_and_apply(account_name: str, holding_key: str) -> dict | None:
+    """체결 누적값을 portfolio.json holding에 반영. 갱신된 holding 반환."""
+    agg = aggregate_for_holding(account_name, holding_key)
+    portfolio = load_portfolio()
+    account = next((a for a in portfolio["accounts"] if a["name"] == account_name), None)
+    if not account:
+        return None
+
+    def matches(h: dict) -> bool:
+        return (h.get("ticker") and h["ticker"] == holding_key) or (
+            not h.get("ticker") and h.get("name") == holding_key
+        )
+
+    holding = next((h for h in account["holdings"] if matches(h)), None)
+    if not holding:
+        return None
+
+    holding["shares"] = round(agg["net_shares"], 8) if agg["net_shares"] > 0 else 0
+    avg = agg["avg_price_from_trades"]
+    is_usd = (account.get("currency") == "USD")
+    if avg is not None and agg["net_shares"] > 0:
+        if is_usd:
+            holding["avg_price_usd"] = round(avg, 4)
+        else:
+            holding["avg_price_krw"] = round(avg, 2)
+    elif agg["net_shares"] <= 0:
+        # 전량 매도: 평단 의미 없음
+        holding.pop("avg_price_usd", None)
+        holding.pop("avg_price_krw", None)
+    save_portfolio(portfolio)
+    return holding
+
+
+@app.post("/api/trades", dependencies=[Depends(require_api_key)])
+async def create_trade(trade: TradeCreate):
+    """체결 기록. apply_to_holding=True면 portfolio.json의 보유수량/평단도 자동 갱신."""
+    try:
+        if trade.side not in ("buy", "sell"):
+            raise HTTPException(status_code=400, detail="side는 buy 또는 sell")
+        if trade.shares <= 0:
+            raise HTTPException(status_code=400, detail="shares > 0 이어야 함")
+
+        trade_id = insert_trade(
+            account_name=trade.account_name,
+            holding_key=trade.holding_key,
+            name=trade.name,
+            ticker=trade.ticker,
+            side=trade.side,
+            shares=trade.shares,
+            price=trade.price,
+            currency=trade.currency,
+            traded_at=trade.traded_at,
+            note=trade.note,
+        )
+
+        applied_holding = None
+        if trade.apply_to_holding:
+            applied_holding = _recalc_and_apply(trade.account_name, trade.holding_key)
+
+        return {"status": "ok", "id": trade_id, "holding": applied_holding}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"trade 생성 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trades")
+async def get_trades(
+    account_name: Optional[str] = None,
+    holding_key: Optional[str] = None,
+    limit: int = 200,
+):
+    """체결 내역 조회. 필터 없으면 최근 200건."""
+    try:
+        items = list_trades(account_name=account_name, holding_key=holding_key, limit=limit)
+        agg = None
+        if account_name and holding_key:
+            agg = aggregate_for_holding(account_name, holding_key)
+        return {"items": items, "aggregate": agg}
+    except Exception as e:
+        logger.error(f"trades 조회 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/trades/{trade_id}", dependencies=[Depends(require_api_key)])
+async def remove_trade(trade_id: int, apply_to_holding: bool = True):
+    """체결 삭제. 삭제 후 누적값 재계산해서 holding에 반영."""
+    try:
+        # 삭제 전 종목 정보를 알아야 재반영 가능 → 먼저 조회
+        related = list_trades(limit=10_000)
+        target = next((t for t in related if t["id"] == trade_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="체결 기록을 찾을 수 없습니다")
+
+        if not delete_trade(trade_id):
+            raise HTTPException(status_code=404, detail="삭제 실패")
+
+        applied_holding = None
+        if apply_to_holding:
+            applied_holding = _recalc_and_apply(target["account_name"], target["holding_key"])
+
+        return {"status": "ok", "holding": applied_holding}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"trade 삭제 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 

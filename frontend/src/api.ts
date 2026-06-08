@@ -1,4 +1,4 @@
-import type { HistoryPoint, PortfolioSummary } from './types';
+import type { HistoryPoint, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
 
 // dev에서는 vite proxy가 /api를 백엔드로 forward.
 // 배포 시 VITE_API_BASE=https://your-api.onrender.com 같이 지정.
@@ -169,6 +169,56 @@ export async function fetchSparkline(): Promise<Record<string, number[]>> {
     return res.json();
   } catch {
     return {};
+  }
+}
+
+// ─── 체결(매수/매도) 내역 ───
+export interface TradeCreate {
+  account_name: string;
+  holding_key: string;
+  name: string;
+  ticker?: string | null;
+  side: 'buy' | 'sell';
+  shares: number;
+  price?: number | null;
+  currency?: string;
+  traded_at?: string | null;
+  note?: string | null;
+  apply_to_holding?: boolean;
+}
+
+export async function createTrade(body: TradeCreate): Promise<{ id: number; holding: unknown }> {
+  const res = await writeFetch(`${BASE}/trades`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchTrades(
+  account_name?: string,
+  holding_key?: string,
+  limit = 200,
+): Promise<{ items: TradeRecord[]; aggregate: TradeAggregate | null }> {
+  const params = new URLSearchParams();
+  if (account_name) params.set('account_name', account_name);
+  if (holding_key) params.set('holding_key', holding_key);
+  params.set('limit', String(limit));
+  const res = await fetch(`${BASE}/trades?${params.toString()}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export async function deleteTrade(id: number): Promise<void> {
+  const res = await writeFetch(`${BASE}/trades/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error ${res.status}`);
   }
 }
 
