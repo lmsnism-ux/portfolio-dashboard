@@ -17,21 +17,18 @@ PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
 
 
 def _seed_from_env() -> bool:
-    """환경변수 PORTFOLIO_JSON_B64 가 있으면 파일과 동기화 (항상 env 우선)."""
+    """환경변수 PORTFOLIO_JSON_B64 가 있으면 파일에 시드 (파일 없을 때만 — 편집 내용 보존)."""
+    if PORTFOLIO_FILE.exists():
+        return False  # 기존 파일 보존: 편집/저장된 내용을 env var로 덮어쓰지 않음
     encoded = os.environ.get("PORTFOLIO_JSON_B64")
     if not encoded:
         logger.warning("PORTFOLIO_JSON_B64 env var not found")
         return False
     try:
         raw = base64.b64decode(encoded).decode("utf-8")
-        parsed = json.loads(raw)
-        has_re = "real_estate" in parsed
-        logger.info(f"_seed_from_env: decoded OK, real_estate={has_re}, file_exists={PORTFOLIO_FILE.exists()}")
-        if PORTFOLIO_FILE.exists() and PORTFOLIO_FILE.read_text().strip() == raw.strip():
-            logger.info("_seed_from_env: file identical to env var, skip write")
-            return False
+        json.loads(raw)  # JSON 유효성 확인
         PORTFOLIO_FILE.write_text(raw)
-        logger.info(f"_seed_from_env: wrote portfolio.json (real_estate={has_re})")
+        logger.info("_seed_from_env: portfolio.json 초기 시드 완료")
         return True
     except Exception as e:
         logger.error(f"_seed_from_env failed: {e}", exc_info=True)
@@ -364,7 +361,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                 "shares": shares,
                 "avg_price": avg_price,
                 "current_price": current_price,
-                "current_price_display": f"{'$' if price_currency == 'USD' else '₩'}{current_price:,.2f}" if current_price else None,
+                "current_price_display": (f"${current_price:,.2f}" if price_currency == 'USD' else f"₩{round(current_price):,}") if current_price else None,
                 "value_krw": round(value_krw),
                 "cost_krw": round(cost_krw) if avg_price else None,
                 "profit_krw": round(profit_krw) if avg_price else None,

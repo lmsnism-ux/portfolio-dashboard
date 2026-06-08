@@ -10,14 +10,23 @@ const HIDDEN_KEY = 'pd_hidden';
 const ORDER_KEY = 'pd_horder';
 const CAT_ORDER_KEY = 'pd_catorder';
 
+const CAT_STYLE: Record<string, { accent: string; headerBg: string }> = {
+  '투자':    { accent: '#3182F6', headerBg: 'rgba(49,130,246,0.06)' },
+  '개인연금': { accent: '#6366f1', headerBg: 'rgba(99,102,241,0.06)' },
+  '퇴직연금': { accent: '#8b5cf6', headerBg: 'rgba(139,92,246,0.06)' },
+  '저축':    { accent: '#10b981', headerBg: 'rgba(16,185,129,0.06)' },
+  '기타':    { accent: '#64748b', headerBg: 'rgba(100,116,139,0.06)' },
+};
+
 const DEFAULT_CATS = ['투자', '개인연금', '퇴직연금', '저축', '기타'];
 
 function topCat(type: string, name = ''): string {
   const s = `${type} ${name}`;
-  if (/주식|ISA|CMA|기본계좌|증권/i.test(s)) return '투자';
+  // IRP/퇴직 계열을 먼저 체크 — '삼성증권 IRP'처럼 '증권'이 포함돼도 정확히 분류
   if (/연금저축/i.test(s)) return '개인연금';
   if (/DC|퇴직|확정기여|확정급여|DB형/i.test(s)) return '퇴직연금';
   if (/IRP|연금/i.test(s)) return '개인연금';
+  if (/주식|ISA|CMA|기본계좌|증권/i.test(s)) return '투자';
   if (/적금|예금|저축/i.test(s)) return '저축';
   return '기타';
 }
@@ -272,14 +281,23 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
           const catTotal = accounts.reduce((s, a) => s + a.value_krw, 0);
           const catDay = accounts.reduce((s, a) => s + a.day_change_krw, 0);
 
+          const catStyle = CAT_STYLE[cat] ?? CAT_STYLE['기타'];
           return (
             <div
               key={cat}
               className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden"
+              style={{ borderLeft: `3px solid ${catStyle.accent}` }}
             >
               {/* 카테고리 헤더 */}
-              <div className="flex items-center justify-between px-4 py-4 border-b border-toss-border/60">
+              <div
+                className="flex items-center justify-between px-4 py-3.5 border-b border-toss-border/60"
+                style={{ backgroundColor: catStyle.headerBg }}
+              >
                 <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: catStyle.accent }}
+                  />
                   <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
                   {cat === '개인연금' && !editMode && (
                     <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">

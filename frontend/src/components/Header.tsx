@@ -1,7 +1,9 @@
 import type { } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime } from '../utils';
+import { fetchSparkline } from '../api';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
 const NASDAQ_RE = /\b(QLD|TQQQ|QQQ)\b|나스닥|nasdaq|미국테크/i;
@@ -20,6 +22,15 @@ const GROUP_CONFIG = {
 } as const;
 
 const GROUP_ORDER: Record<string, number> = { nasdaq: 0, sp500: 1, korea: 2 };
+
+const TICKER_SORT_PRIORITY: Record<string, number> = { QLD: 0, TQQQ: 1, QQQ: 2 };
+function tickerPriority(name: string): number {
+  const u = name.toUpperCase();
+  for (const [k, v] of Object.entries(TICKER_SORT_PRIORITY)) {
+    if (u === k || u.startsWith(k + ' ') || u.endsWith(' ' + k) || u.includes('(' + k + ')')) return v;
+  }
+  return 99;
+}
 
 function groupAvgPct(items: TickerItem[]): number {
   if (!items.length) return 0;
@@ -60,13 +71,39 @@ interface Props {
 
 type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number; price: string | null; priceLabel: string };
 
-function GroupHeaderBadge({ label, pct }: { label: string; pct: number }) {
+function Sparkline({ data, pct }: { data: number[]; pct: number }) {
+  if (!data || data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const W = 44, H = 18;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * W;
+    const y = H - ((v - min) / range) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return (
+    <svg width={W} height={H} className="opacity-75 shrink-0">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={pct >= 0 ? '#2daf4e' : '#f03e3e'}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function GroupHeaderBadge({ label, pct, sparkData }: { label: string; pct: number; sparkData?: number[] }) {
   const isPos = pct >= 0;
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border cursor-default shrink-0 ${
       isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
     }`}>
       <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">{label}</span>
+      {sparkData && sparkData.length >= 2 && <Sparkline data={sparkData} pct={pct} />}
       <span className={`num text-[14px] font-extrabold whitespace-nowrap ${colorClass(pct)}`}>
         {isPos ? '+' : ''}{pct.toFixed(2)}%
       </span>
@@ -112,6 +149,13 @@ export default function Header({
   onToggleDc,
   isRefreshing,
 }: Props) {
+  const { data: sparklines } = useQuery({
+    queryKey: ['sparkline'],
+    queryFn: fetchSparkline,
+    staleTime: 60 * 60 * 1000,
+    refetchInterval: 60 * 60 * 1000,
+  });
+
   const dcAccs    = data.accounts.filter(a => /DC|퇴직/i.test(a.type));
   const dcKrw     = dcAccs.reduce((s, a) => s + a.value_krw, 0);
   const dcDayChg  = dcAccs.reduce((s, a) => s + a.day_change_krw, 0);
@@ -151,6 +195,8 @@ export default function Header({
       const ag = GROUP_ORDER[getGroup(a.name)];
       const bg = GROUP_ORDER[getGroup(b.name)];
       if (ag !== bg) return ag - bg;
+      const ap = tickerPriority(a.name), bp = tickerPriority(b.name);
+      if (ap !== bp) return ap - bp;
       return Math.abs(b.pct) - Math.abs(a.pct);
     });
   })();
@@ -289,7 +335,7 @@ export default function Header({
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
                       ))}
                     </div>
                     {usDetailItems.length > 0 && (
@@ -312,7 +358,7 @@ export default function Header({
                   </div>
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                      <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {groups.korea.map((item, i) => (

@@ -107,6 +107,16 @@ export async function deleteHolding(account_name: string, holding_key: string): 
   }
 }
 
+export async function fetchSparkline(): Promise<Record<string, number[]>> {
+  try {
+    const res = await fetch(`${BASE}/market/sparkline`);
+    if (!res.ok) return {};
+    return res.json();
+  } catch {
+    return {};
+  }
+}
+
 export async function reorderAccounts(names: string[]): Promise<void> {
   const res = await fetch(`${BASE}/portfolio/accounts/order`, {
     method: 'PATCH',

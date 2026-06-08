@@ -15,7 +15,7 @@ interface Props {
 export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets, longTermKrw }: Props) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<string>(goalKrw ? (goalKrw / 10000).toString() : '');
+  const [draft, setDraft] = useState<string>(goalKrw ? (goalKrw / 10000).toString() : '10000');
   const [excludeLongTerm, setExcludeLongTerm] = useState(false);
 
   const mutation = useMutation({
@@ -66,7 +66,7 @@ export default function GoalCard({ goalKrw, currentKrw, progressPct, hideAssets,
           {!editing && (
             <button
               onClick={() => {
-                setDraft(goalKrw ? (goalKrw / 10000).toString() : '');
+                setDraft(goalKrw ? (goalKrw / 10000).toString() : '10000');
                 setEditing(true);
               }}
               className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95"

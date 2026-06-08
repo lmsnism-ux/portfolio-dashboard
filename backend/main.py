@@ -1,7 +1,9 @@
 """FastAPI 포트폴리오 대시보드 백엔드"""
 from __future__ import annotations
+import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -397,6 +399,34 @@ async def update_goal(update: GoalUpdate):
     except Exception as e:
         logger.error(f"goal 수정 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+_sparkline_cache: dict = {}
+_sparkline_ts: float = 0.0
+
+@app.get("/api/market/sparkline")
+async def get_sparkline():
+    """지수별 최근 20 영업일 종가 (스파크라인용). 1시간 캐시."""
+    global _sparkline_cache, _sparkline_ts
+    if _sparkline_cache and time.time() - _sparkline_ts < 3600:
+        return _sparkline_cache
+
+    def _fetch():
+        import yfinance as yf
+        result = {}
+        for key, ticker in [("nasdaq", "^IXIC"), ("sp500", "^GSPC"), ("korea", "^KS11")]:
+            try:
+                hist = yf.Ticker(ticker).history(period="30d")
+                result[key] = [round(float(v), 2) for v in hist["Close"].tolist()[-20:]]
+            except Exception as e:
+                logger.warning(f"sparkline fetch 실패 ({ticker}): {e}")
+                result[key] = []
+        return result
+
+    data = await asyncio.to_thread(_fetch)
+    _sparkline_cache = data
+    _sparkline_ts = time.time()
+    return data
+
 
 @app.get("/api/prices")
 async def get_prices():
