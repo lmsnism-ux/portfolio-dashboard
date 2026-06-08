@@ -259,9 +259,18 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
                   {cat === '연금' && !editMode && (
-                    <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                      장기투자 · 55세 이후 수령
-                    </span>
+                    <>
+                      {accounts.some(a => /DC|퇴직/i.test(a.type)) && (
+                        <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          퇴직 시 수령
+                        </span>
+                      )}
+                      {accounts.some(a => /IRP|연금저축/i.test(a.type)) && (
+                        <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          55세 이후 수령
+                        </span>
+                      )}
+                    </>
                   )}
                   {/* 편집 모드: 카테고리 순서 변경 */}
                   {editMode && (

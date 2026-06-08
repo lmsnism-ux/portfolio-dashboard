@@ -420,10 +420,13 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
     total_profit_krw = total_value_krw - total_cost_krw
     total_profit_pct = (total_profit_krw / total_cost_krw * 100) if total_cost_krw > 0 else None
 
+    # 비중 계산은 투자 자산만 (부동산 제외) — 도넛 차트 합계가 100%가 되도록
+    invest_value_krw = total_value_krw - re_equity_krw
+
     # 종목별 비중 (상위 10)
     sorted_holdings = sorted(holdings_merged.values(), key=lambda x: x["value_krw"], reverse=True)[:10]
     for item in sorted_holdings:
-        item["weight"] = round(item["value_krw"] / total_value_krw * 100, 2) if total_value_krw else 0
+        item["weight"] = round(item["value_krw"] / invest_value_krw * 100, 2) if invest_value_krw else 0
 
     # 계좌별 비중
     account_weights = [
@@ -431,7 +434,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             "name": a["name"],
             "type": a["type"],
             "value_krw": a["value_krw"],
-            "weight": round(a["value_krw"] / total_value_krw * 100, 2) if total_value_krw else 0,
+            "weight": round(a["value_krw"] / invest_value_krw * 100, 2) if invest_value_krw else 0,
         }
         for a in accounts_data
     ]
@@ -471,11 +474,11 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             region_totals[reg] = region_totals.get(reg, 0) + value_krw
 
     def _to_weights(d: dict[str, float]) -> list[dict]:
-        if not d or total_value_krw == 0:
+        if not d or invest_value_krw == 0:
             return []
         return sorted(
             [
-                {"name": k, "value_krw": round(v), "weight": round(v / total_value_krw * 100, 2)}
+                {"name": k, "value_krw": round(v), "weight": round(v / invest_value_krw * 100, 2)}
                 for k, v in d.items()
             ],
             key=lambda x: x["value_krw"],
