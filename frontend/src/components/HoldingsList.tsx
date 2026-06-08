@@ -467,16 +467,20 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                     </>
                                   ) : (
                                     <>
-                                      {h.profit_krw !== null && (
-                                        <p className={`num text-[11px] ${colorClass(h.profit_krw)}`}>
-                                          {h.profit_krw >= 0 ? '+' : ''}
-                                          {hideAssets ? '••••' : fmtKRW(h.profit_krw)}
-                                        </p>
-                                      )}
-                                      {h.profit_pct !== null && (
-                                        <p className={`num text-[10px] ${colorClass(h.profit_pct)}`}>
-                                          ({fmtPct(h.profit_pct)})
-                                        </p>
+                                      {h.profit_krw !== null ? (
+                                        <>
+                                          <p className={`num text-[11px] ${colorClass(h.profit_krw)}`}>
+                                            {h.profit_krw >= 0 ? '+' : ''}
+                                            {hideAssets ? '••••' : fmtKRW(h.profit_krw)}
+                                          </p>
+                                          {h.profit_pct !== null && (
+                                            <p className={`num text-[10px] ${colorClass(h.profit_pct)}`}>
+                                              ({fmtPct(h.profit_pct)})
+                                            </p>
+                                          )}
+                                        </>
+                                      ) : !h.is_snapshot && (
+                                        <p className="text-[10px] text-toss-text-tertiary">평단 미입력</p>
                                       )}
                                     </>
                                   )}

@@ -4,11 +4,38 @@ import type { PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime } from '../utils';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
-const INDEX_RE = /코스피|나스닥|kospi|nasdaq|s&p/i;
+const NASDAQ_RE = /\b(QLD|TQQQ|QQQ)\b|나스닥|nasdaq|미국테크/i;
+const SP500_RE = /s&p|미국\s*s&p/i;
+
+function getGroup(name: string): 'nasdaq' | 'sp500' | 'korea' {
+  if (NASDAQ_RE.test(name)) return 'nasdaq';
+  if (SP500_RE.test(name)) return 'sp500';
+  return 'korea';
+}
+
+const GROUP_CONFIG = {
+  nasdaq: { label: '나스닥' },
+  sp500: { label: 'S&P500' },
+  korea: { label: '코스피' },
+} as const;
+
+const GROUP_ORDER: Record<string, number> = { nasdaq: 0, sp500: 1, korea: 2 };
+
+function groupAvgPct(items: TickerItem[]): number {
+  if (!items.length) return 0;
+  return items.reduce((s, t) => s + t.pct, 0) / items.length;
+}
 
 function shortTickerName(name: string): string {
-  const stripped = name.replace(ETF_BRAND_RE, '').trim();
-  return stripped.length > 11 ? stripped.slice(0, 11) + '…' : stripped;
+  let s = name
+    .replace(ETF_BRAND_RE, '')
+    .replace(/\s*INDXX\s*/gi, '')
+    .replace(/플러스/g, '+')
+    .replace(/액티브/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  s = s.replace(/TOP(\d+)/gi, 'T$1');
+  return s.length > 9 ? s.slice(0, 9) + '…' : s;
 }
 
 function accCatOrder(type: string): number {
@@ -30,26 +57,21 @@ interface Props {
 
 type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number };
 
-function Badge({ item, hideAssets, isIndex = false }: { item: TickerItem; hideAssets: boolean; isIndex?: boolean }) {
+function GroupHeaderBadge({ label, pct }: { label: string; pct: number }) {
+  const bgClass = pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft';
+  return (
+    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-default shrink-0 ${bgClass}`}>
+      <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">{label}</span>
+      <span className={`num text-[14px] font-bold whitespace-nowrap ${colorClass(pct)}`}>
+        {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+      </span>
+    </div>
+  );
+}
+
+function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
   const bgClass = item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft';
   const titleAttr = `${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`;
-
-  if (isIndex) {
-    return (
-      <div
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-default shrink-0 ${bgClass}`}
-        title={titleAttr}
-      >
-        <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">
-          {shortTickerName(item.name)}
-        </span>
-        <span className={`num text-[14px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
-          {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(2)}%
-        </span>
-      </div>
-    );
-  }
-
   return (
     <div
       className={`flex items-center gap-1 px-2 py-0.5 rounded-lg cursor-default shrink-0 ${bgClass}`}
@@ -79,15 +101,15 @@ export default function Header({
   const [excludeLong, setExcludeLong] = useState(false);
 
   const longTermAccs = data.accounts.filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type));
-  const longTermKrw      = longTermAccs.reduce((s, a) => s + a.value_krw, 0);
-  const longTermDayChg   = longTermAccs.reduce((s, a) => s + a.day_change_krw, 0);
-  const longTermProfit   = longTermAccs.reduce((s, a) => s + a.profit_krw, 0);
-  const longTermCost     = longTermAccs.reduce((s, a) => s + a.cost_krw, 0);
+  const longTermKrw    = longTermAccs.reduce((s, a) => s + a.value_krw, 0);
+  const longTermDayChg = longTermAccs.reduce((s, a) => s + a.day_change_krw, 0);
+  const longTermProfit = longTermAccs.reduce((s, a) => s + a.profit_krw, 0);
+  const longTermCost   = longTermAccs.reduce((s, a) => s + a.cost_krw, 0);
 
-  const displayTotal    = excludeLong ? data.total_value_krw   - longTermKrw    : data.total_value_krw;
-  const displayDayChg   = excludeLong ? data.total_day_change_krw - longTermDayChg : data.total_day_change_krw;
-  const displayProfit   = excludeLong ? data.total_profit_krw  - longTermProfit : data.total_profit_krw;
-  const investCost      = data.total_cost_krw - (excludeLong ? longTermCost : 0);
+  const displayTotal     = excludeLong ? data.total_value_krw      - longTermKrw    : data.total_value_krw;
+  const displayDayChg    = excludeLong ? data.total_day_change_krw - longTermDayChg : data.total_day_change_krw;
+  const displayProfit    = excludeLong ? data.total_profit_krw     - longTermProfit : data.total_profit_krw;
+  const investCost       = data.total_cost_krw - (excludeLong ? longTermCost : 0);
   const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
   const prevTotal        = displayTotal - displayDayChg;
   const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
@@ -110,16 +132,16 @@ export default function Header({
         });
     });
     return [...seen.values()].sort((a, b) => {
-      const aIdx = INDEX_RE.test(a.name);
-      const bIdx = INDEX_RE.test(b.name);
-      if (aIdx !== bIdx) return aIdx ? -1 : 1;
-      if (a.catOrder !== b.catOrder) return a.catOrder - b.catOrder;
+      const ag = GROUP_ORDER[getGroup(a.name)];
+      const bg = GROUP_ORDER[getGroup(b.name)];
+      if (ag !== bg) return ag - bg;
       return Math.abs(b.pct) - Math.abs(a.pct);
     });
   })();
 
-  const indexItems = tickerItems.filter(t => INDEX_RE.test(t.name));
-  const otherItems = tickerItems.filter(t => !INDEX_RE.test(t.name));
+  const groups = { nasdaq: [] as TickerItem[], sp500: [] as TickerItem[], korea: [] as TickerItem[] };
+  tickerItems.forEach(t => { groups[getGroup(t.name)].push(t); });
+  const activeGroups = (['nasdaq', 'sp500', 'korea'] as const).filter(g => groups[g].length > 0);
 
   return (
     <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
@@ -158,7 +180,6 @@ export default function Header({
         {/* 총자산 + 데스크탑 배지 */}
         <div className="mb-3 flex items-start gap-5">
           <div className="flex-1 min-w-0">
-            {/* 라벨 + 장기투자 제외 토글 */}
             <div className="flex items-center gap-2 mb-1.5">
               <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase">총 자산</p>
               {longTermKrw > 0 && (
@@ -187,43 +208,41 @@ export default function Header({
 
           {/* 데스크탑: 우측 배지 패널 */}
           {tickerItems.length > 0 && (
-            <div className="hidden md:block shrink-0 pt-1 max-w-[280px]">
+            <div className="hidden md:block shrink-0 pt-1 max-w-[320px]">
               <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-              {indexItems.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {indexItems.map((item, i) => (
-                    <Badge key={i} item={item} hideAssets={hideAssets} isIndex />
-                  ))}
-                </div>
-              )}
-              {otherItems.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {otherItems.map((item, i) => (
-                    <Badge key={i} item={item} hideAssets={hideAssets} />
-                  ))}
-                </div>
-              )}
+              <div className="space-y-2">
+                {activeGroups.map(g => (
+                  <div key={g}>
+                    <GroupHeaderBadge label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                    {groups[g].length > 1 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {groups[g].map((item, i) => (
+                          <Badge key={i} item={item} hideAssets={hideAssets} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* 모바일: 주요지수(크게) + 보유종목(작게) */}
+        {/* 모바일: 그룹별 배지 */}
         {tickerItems.length > 0 && (
-          <div className="md:hidden mb-3 space-y-1.5">
-            {indexItems.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {indexItems.map((item, i) => (
-                  <Badge key={i} item={item} hideAssets={hideAssets} isIndex />
-                ))}
+          <div className="md:hidden mb-3 space-y-2">
+            {activeGroups.map(g => (
+              <div key={g}>
+                <GroupHeaderBadge label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                {groups[g].length > 1 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {groups[g].map((item, i) => (
+                      <Badge key={i} item={item} hideAssets={hideAssets} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-            {otherItems.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {otherItems.map((item, i) => (
-                  <Badge key={i} item={item} hideAssets={hideAssets} />
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         )}
 
