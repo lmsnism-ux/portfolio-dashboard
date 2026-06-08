@@ -4,9 +4,12 @@ import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
 import AutoBuyCard from './components/AutoBuyCard';
 import RealEstateCard from './components/RealEstateCard';
+import CashCard from './components/CashCard';
 import HistoryChart from './components/HistoryChart';
+import ProfitHeatmap from './components/ProfitHeatmap';
 import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
+import RebalanceCard from './components/RebalanceCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import EditHoldingModal from './components/EditHoldingModal';
@@ -118,6 +121,9 @@ export default function App() {
         {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
         <HistoryChart data={data} hideAssets={hideAssets} />
 
+        {/* 월별 수익 히트맵 */}
+        <ProfitHeatmap />
+
         {/* 부동산 · 대출 - HistoryChart 바로 아래 */}
         {data.real_estate && (
           <RealEstateCard
@@ -128,8 +134,20 @@ export default function App() {
           />
         )}
 
+        {/* 현금·예금 */}
+        {data.cash_assets && data.cash_assets.items.length > 0 && (
+          <CashCard
+            data={data.cash_assets}
+            cashTotal={data.cash_total_krw ?? 0}
+            hideAssets={hideAssets}
+          />
+        )}
+
         {/* 도넛 차트 3개 나란히 */}
         <AllocationCard data={data} hideAssets={hideAssets} />
+
+        {/* 리밸런싱 도우미 */}
+        <RebalanceCard data={data} hideAssets={hideAssets} />
 
         {/* 종목별 비중 바 차트 */}
         {data.top_holdings?.length > 0 && (
@@ -141,10 +159,11 @@ export default function App() {
           const longTermKrw = data.accounts
             .filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type))
             .reduce((s, a) => s + a.value_krw, 0);
+          const reExcluded = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
           return (
             <GoalCard
               goalKrw={data.goal_krw}
-              currentKrw={data.total_value_krw}
+              currentKrw={data.total_value_krw - reExcluded}
               progressPct={data.goal_progress_pct}
               hideAssets={hideAssets}
               longTermKrw={longTermKrw}

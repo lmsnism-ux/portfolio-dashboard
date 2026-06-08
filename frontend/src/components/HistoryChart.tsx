@@ -206,6 +206,25 @@ export default function HistoryChart({ data, hideAssets }: Props) {
       .slice(0, 6);
   }, [data.accounts, useProfit]);
 
+  const annualStats = useMemo(() => {
+    if (!items || items.length < 2) return [];
+    const currentYear = new Date().getFullYear();
+    const results: Array<{ year: number; pct: number | null; diff: number; partial: boolean }> = [];
+    for (let year = currentYear - 2; year <= currentYear; year++) {
+      const yearStart = `${year}-01-01`;
+      const beforeYear = items.filter(p => p.date < yearStart);
+      const inYear = items.filter(p => p.date >= yearStart && p.date <= `${year}-12-31`);
+      if (!inYear.length) continue;
+      const base = beforeYear[beforeYear.length - 1] ?? inYear[0];
+      const last = inYear[inYear.length - 1];
+      if (base === last) continue;
+      const diff = last.total_value_krw - base.total_value_krw;
+      const pct = base.total_value_krw ? (diff / base.total_value_krw) * 100 : null;
+      results.push({ year, diff, pct, partial: year === currentYear || beforeYear.length === 0 });
+    }
+    return results;
+  }, [items]);
+
   const availableDays = items?.length ?? 0;
 
   return (
@@ -221,12 +240,36 @@ export default function HistoryChart({ data, hideAssets }: Props) {
           const investProfit = data.total_profit_krw - reProfit;
           const investProfitPct = investCost > 0 ? (investProfit / investCost * 100) : null;
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
-              <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
-              <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
-              <MiniStat label="누적 수익" diff={investProfit} pct={investProfitPct} hideAssets={hideAssets} />
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
+                <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
+                <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
+                <MiniStat label="누적 수익" diff={investProfit} pct={investProfitPct} hideAssets={hideAssets} />
+              </div>
+              {annualStats.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-toss-border/50">
+                  <p className="text-[10px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-2">연도별 수익</p>
+                  <div className="flex gap-2">
+                    {annualStats.map(s => (
+                      <div key={s.year} className="flex-1 bg-toss-bg rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] text-toss-text-tertiary mb-1">
+                          {s.year}{s.partial ? '년 (진행중)' : '년'}
+                        </p>
+                        <p className={`num text-sm font-bold ${colorClass(s.pct ?? 0)}`}>
+                          {s.pct !== null ? `${s.pct >= 0 ? '+' : ''}${s.pct.toFixed(1)}%` : '-'}
+                        </p>
+                        {!hideAssets && s.diff !== 0 && (
+                          <p className={`num text-[10px] mt-0.5 ${colorClass(s.diff)}`}>
+                            {s.diff >= 0 ? '+' : ''}{fmtKRW(s.diff)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           );
         })()}
       </div>

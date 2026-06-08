@@ -49,6 +49,9 @@ export default function RealEstateCard({ data, hideAssets, visible, onToggle }: 
   const loan = prop.loan;
   const netEquity = loan ? prop.current_value_krw - loan.balance_krw : prop.current_value_krw;
   const monthlyInterest = loan ? Math.round(loan.balance_krw * (loan.rate_pct / 100) / 12) : 0;
+  const annualInterest = monthlyInterest * 12;
+  const selfCapital = loan ? prop.purchase_price_krw - loan.balance_krw : prop.purchase_price_krw;
+  const leverageROI = selfCapital > 0 ? (gain / selfCapital) * 100 : null;
   const dueDate = nextDueDate();
 
   return (
@@ -111,6 +114,19 @@ export default function RealEstateCard({ data, hideAssets, visible, onToggle }: 
                 </p>
               </div>
             </div>
+            {leverageROI !== null && (
+              <div className="mt-2 bg-toss-bg rounded-xl px-3 py-2.5 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] text-toss-text-tertiary">실투자 수익률 (레버리지)</p>
+                  <p className="text-[9px] text-toss-text-tertiary mt-0.5">
+                    자기자본 {hideAssets ? '••••' : fmtKRW(selfCapital)} 기준
+                  </p>
+                </div>
+                <p className={`num text-base font-bold ${colorClass(leverageROI)}`}>
+                  {leverageROI >= 0 ? '+' : ''}{leverageROI.toFixed(1)}%
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 대출 정보 */}
@@ -146,6 +162,14 @@ export default function RealEstateCard({ data, hideAssets, visible, onToggle }: 
                     참고: {hideAssets ? '••••' : `${(loan.last_payment_krw / 10000).toFixed(1)}만원`}
                   </p>
                 </div>
+              </div>
+
+              {/* 연간 이자 부담 */}
+              <div className="mb-3 bg-toss-bg rounded-xl px-3 py-2.5 flex items-center justify-between">
+                <p className="text-[10px] text-toss-text-tertiary">연간 이자 부담 추정</p>
+                <p className="num text-sm font-bold text-toss-down">
+                  {hideAssets ? '••••' : `${fmtKRW(annualInterest)}/년`}
+                </p>
               </div>
 
               {/* 순자산 바 */}

@@ -98,6 +98,17 @@ export interface RealEstateData {
   properties: PropertyData[];
 }
 
+export interface CashItem {
+  name: string;
+  balance_krw: number;
+  interest_rate_pct?: number;
+  maturity_date?: string;
+}
+
+export interface CashAssetsData {
+  items: CashItem[];
+}
+
 export interface HistoryPoint {
   date: string;
   total_value_krw: number;
@@ -136,6 +147,8 @@ export interface PortfolioSummary {
   real_estate?: RealEstateData;
   real_estate_equity_krw?: number;
   real_estate_cost_krw?: number;
+  cash_assets?: CashAssetsData;
+  cash_total_krw?: number;
   calculated_at: string;
   price_updated_at: string | null;
   cache_stale_hours: number | null;

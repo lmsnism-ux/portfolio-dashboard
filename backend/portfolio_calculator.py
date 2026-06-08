@@ -482,6 +482,13 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             reverse=True,
         )
 
+    # 현금/예금 자산 합산 (투자 총계에는 포함하지 않음, 별도 표시)
+    cash_assets = portfolio.get("cash_assets")
+    cash_total_krw = 0
+    if cash_assets:
+        for item in cash_assets.get("items", []):
+            cash_total_krw += item.get("balance_krw", 0)
+
     goal_krw = portfolio.get("goal_krw")
     goal_progress = None
     if goal_krw and goal_krw > 0:
@@ -514,6 +521,8 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "total_profit_krw": round(total_profit_krw),
         "real_estate_equity_krw": round(re_equity_krw),
         "real_estate_cost_krw": round(re_cost_krw),
+        "cash_assets": portfolio.get("cash_assets"),
+        "cash_total_krw": round(cash_total_krw),
         "total_profit_pct": round(total_profit_pct, 2) if total_profit_pct is not None else None,
         "total_day_change_krw": round(total_day_change_krw),
         "total_day_change_pct": round(total_day_change_pct, 2) if total_day_change_pct is not None else None,
