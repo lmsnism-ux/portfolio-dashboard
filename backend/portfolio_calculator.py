@@ -376,6 +376,9 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                     "price_label": "달러 예수금",
                     "is_snapshot": True,
                     "auto_buy": h.get("auto_buy"),
+                    "region": h.get("region") or "미국",
+                    "asset_class": h.get("asset_class") or "현금",
+                    "asset_type": h.get("asset_type"),
                 })
                 continue
 
@@ -409,6 +412,9 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                     "price_label": "스냅샷",
                     "is_snapshot": True,
                     "auto_buy": h.get("auto_buy"),
+                    "region": h.get("region") or "국내",
+                    "asset_class": h.get("asset_class") or "미분류",
+                    "asset_type": h.get("asset_type"),
                 })
                 continue
 
@@ -495,10 +501,14 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
                 "profit_pct": round(profit_pct, 2) if profit_pct is not None else None,
                 "day_change_pct": change_pct,
                 "day_change_krw": round(day_change_krw) if day_change_krw is not None else None,
+                "fetched_at": price_info.get("fetched_at"),
                 "currency": price_currency,
                 "price_label": price_label,
                 "is_snapshot": False,
                 "auto_buy": h.get("auto_buy"),
+                "region": h.get("region") or ("미국" if price_currency == "USD" else "국내"),
+                "asset_class": h.get("asset_class") or "미분류",
+                "asset_type": h.get("asset_type"),
             })
 
         account_profit_krw = account_value_krw - account_cost_krw

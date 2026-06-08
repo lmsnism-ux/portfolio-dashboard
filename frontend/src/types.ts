@@ -18,10 +18,16 @@ export interface HoldingData {
   profit_pct: number | null;
   day_change_pct: number | null;
   day_change_krw: number | null;
+  /** 가격 fetched_at (ISO, KST). 시장 구분에서 시점 표시에 사용 */
+  fetched_at?: string;
   currency: string;
   price_label: string;
   is_snapshot: boolean;
   auto_buy?: AutoBuy;
+  /** 포트폴리오 메타: 시장/자산 분류용 */
+  region?: string;         // '국내' | '미국' | '글로벌' | '신흥국' 등
+  asset_class?: string;    // '주식' | '혼합(TDF)' | '현금' | '예금' 등
+  asset_type?: string;     // 'ETF' | '안전자산' 등 IRP 한도 계산용
 }
 
 export interface IrpInfo {

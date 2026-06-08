@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell } from 'lucide-react';
-import type { PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, categorizeAccount } from '../utils';
+import type { HoldingData, PortfolioSummary } from '../types';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, type Exchange, type HoldingClass } from '../utils';
 import { fetchSparkline, getApiKey, setApiKey } from '../api';
 import {
   loadSettings as loadNotifSettings,
@@ -13,36 +13,6 @@ import {
 } from '../notifications';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
-const NASDAQ_RE = /\b(QLD|TQQQ|QQQ)\b|나스닥|nasdaq|미국테크/i;
-const SP500_RE = /s&p|미국\s*s&p/i;
-
-function getGroup(name: string): 'nasdaq' | 'sp500' | 'korea' {
-  if (NASDAQ_RE.test(name)) return 'nasdaq';
-  if (SP500_RE.test(name)) return 'sp500';
-  return 'korea';
-}
-
-const GROUP_CONFIG = {
-  nasdaq: { label: '나스닥' },
-  sp500: { label: 'S&P500' },
-  korea: { label: '코스피' },
-} as const;
-
-const GROUP_ORDER: Record<string, number> = { nasdaq: 0, sp500: 1, korea: 2 };
-
-const TICKER_SORT_PRIORITY: Record<string, number> = { QLD: 0, TQQQ: 1, QQQ: 2 };
-function tickerPriority(name: string): number {
-  const u = name.toUpperCase();
-  for (const [k, v] of Object.entries(TICKER_SORT_PRIORITY)) {
-    if (u === k || u.startsWith(k + ' ') || u.endsWith(' ' + k) || u.includes('(' + k + ')')) return v;
-  }
-  return 99;
-}
-
-function groupAvgPct(items: TickerItem[]): number {
-  if (!items.length) return 0;
-  return items.reduce((s, t) => s + t.pct, 0) / items.length;
-}
 
 function etfDisplayName(name: string): string {
   return name
@@ -50,13 +20,6 @@ function etfDisplayName(name: string): string {
     .replace(/\s*INDXX\s*/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-const CAT_PRIORITY: Record<string, number> = {
-  '투자': 1, '개인연금': 2, '퇴직연금': 2, '저축': 3, '기타': 4,
-};
-function accCatOrder(type: string): number {
-  return CAT_PRIORITY[categorizeAccount(type)] ?? 4;
 }
 
 interface Props {
@@ -73,7 +36,26 @@ interface Props {
   isRefreshing: boolean;
 }
 
-type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number; price: string | null; priceLabel: string };
+interface TickerItem {
+  name: string;
+  pct: number;
+  krwChange: number | null;
+  price: string | null;
+  priceLabel: string;
+  category: HoldingClass;
+  exchange: Exchange;
+  shortLabel: string;
+  accentColor: string;
+  fetchedAt: string | null;
+}
+
+const CATEGORY_ORDER: Record<HoldingClass, number> = {
+  kr_domestic: 1,
+  kr_listed_overseas: 2,
+  mixed_tdf: 3,
+  us_direct: 4,
+  cash: 5,
+};
 
 function Sparkline({ data, pct }: { data: number[]; pct: number }) {
   if (!data || data.length < 2) return null;
@@ -100,38 +82,88 @@ function Sparkline({ data, pct }: { data: number[]; pct: number }) {
   );
 }
 
-function GroupHeaderBadge({ label, pct, sparkData }: { label: string; pct: number; sparkData?: number[] }) {
-  const isPos = pct >= 0;
+/** 시장(한국장/미국장) 상태 + 대표 지수 큰 카드 */
+function MarketStatusCard({
+  exchange,
+  indexLabel,
+  indexPct,
+  sparkData,
+}: {
+  exchange: Exchange;
+  indexLabel: string;
+  indexPct: number | null;
+  sparkData?: number[];
+}) {
+  const status = getMarketStatus(exchange);
+  const isKR = exchange === 'KR';
+  const flag = isKR ? '🇰🇷' : '🇺🇸';
+  const title = isKR ? '한국장' : '미국장';
+
+  const stateConfig = {
+    open:   { dot: 'bg-emerald-500', dotAnim: 'animate-pulse', text: 'text-emerald-500' },
+    pre:    { dot: 'bg-amber-400',   dotAnim: '',              text: 'text-amber-500' },
+    post:   { dot: 'bg-toss-text-tertiary/60', dotAnim: '',    text: 'text-toss-text-tertiary' },
+    closed: { dot: 'bg-toss-text-tertiary/40', dotAnim: '',    text: 'text-toss-text-tertiary' },
+  }[status.state];
+
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border cursor-default shrink-0 ${
-      isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
-    }`}>
-      <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">{label}</span>
-      {sparkData && sparkData.length >= 2 && <Sparkline data={sparkData} pct={pct} />}
-      <span className={`num text-[14px] font-extrabold whitespace-nowrap ${colorClass(pct)}`}>
-        {isPos ? '+' : ''}{pct.toFixed(2)}%
-      </span>
+    <div className="flex-1 min-w-[180px] bg-toss-card border border-toss-border rounded-2xl px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-lg leading-none" aria-hidden>{flag}</span>
+        <span className="text-[13px] font-bold text-toss-text-primary">{title}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${stateConfig.dot} ${stateConfig.dotAnim}`} />
+          <span className={`text-[11px] font-semibold ${stateConfig.text}`}>{status.label}</span>
+        </div>
+      </div>
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] text-toss-text-tertiary">{indexLabel}</p>
+          {indexPct !== null ? (
+            <p className={`num text-[18px] font-extrabold leading-tight ${colorClass(indexPct)}`}>
+              {indexPct >= 0 ? '+' : ''}{indexPct.toFixed(2)}%
+            </p>
+          ) : (
+            <p className="num text-[16px] font-bold text-toss-text-tertiary">-</p>
+          )}
+        </div>
+        {sparkData && sparkData.length >= 2 && indexPct !== null && (
+          <Sparkline data={sparkData} pct={indexPct} />
+        )}
+      </div>
+      <p className="text-[10px] text-toss-text-tertiary mt-1.5">{status.timeLabel}</p>
     </div>
   );
 }
 
+/** 보유 종목 카드 — 카테고리 라벨 포함 */
 function HoldingCard({ item }: { item: TickerItem }) {
   const isPos = item.pct >= 0;
   return (
-    <div className={`flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border ${
-      isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
-    }`}>
+    <div
+      className={`flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border ${
+        isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
+      }`}
+    >
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-toss-text-secondary leading-snug">
+        <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
           {etfDisplayName(item.name)}
         </p>
-        {item.price && (
-          <p className="text-[10px] text-toss-text-tertiary mt-0.5">
-            {item.priceLabel === '실시간' ? '현재가' : '종가'} {item.price}
-          </p>
-        )}
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span
+            className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
+            style={{ background: item.accentColor }}
+          >
+            {item.shortLabel}
+          </span>
+          {item.price && (
+            <span className="text-[10px] text-toss-text-tertiary truncate">
+              {item.priceLabel === '실시간' ? '현재가' : '종가'} {item.price}
+            </span>
+          )}
+        </div>
       </div>
-      <span className={`num text-[13px] font-extrabold shrink-0 pt-0.5 ${colorClass(item.pct)}`}>
+      <span className={`num text-[14px] font-extrabold shrink-0 pt-0.5 ${colorClass(item.pct)}`}>
         {isPos ? '+' : ''}{item.pct.toFixed(2)}%
       </span>
     </div>
@@ -217,32 +249,75 @@ export default function Header({
   const profitColor = colorClass(displayProfit);
   const dayColor    = colorClass(displayDayChg);
 
+  // 보유 종목 → 거래소(KR/US)와 세부 카테고리로 분류
   const tickerItems: TickerItem[] = (() => {
     const seen = new Map<string, TickerItem>();
     data.accounts.forEach(acc => {
-      const catOrd = accCatOrder(acc.type);
       acc.holdings
-        .filter(h => h.day_change_pct !== null && !/TDF/i.test(h.name))
-        .forEach(h => {
+        .filter((h: HoldingData) => h.day_change_pct !== null && !h.is_snapshot)
+        .forEach((h: HoldingData) => {
+          const cls = classifyHolding(h);
+          if (cls.category === 'cash') return; // 현금은 시장 변동 없음
           const ex = seen.get(h.name);
           const pct = h.day_change_pct as number;
           if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
-            seen.set(h.name, { name: h.name, pct, krwChange: h.day_change_krw, catOrder: catOrd, price: h.current_price_display, priceLabel: h.price_label });
+            seen.set(h.name, {
+              name: h.name,
+              pct,
+              krwChange: h.day_change_krw,
+              price: h.current_price_display,
+              priceLabel: h.price_label,
+              category: cls.category,
+              exchange: cls.exchange,
+              shortLabel: cls.shortLabel,
+              accentColor: cls.accentColor,
+              fetchedAt: h.fetched_at ?? null,
+            });
           }
         });
     });
     return [...seen.values()].sort((a, b) => {
-      const ag = GROUP_ORDER[getGroup(a.name)];
-      const bg = GROUP_ORDER[getGroup(b.name)];
-      if (ag !== bg) return ag - bg;
-      const ap = tickerPriority(a.name), bp = tickerPriority(b.name);
-      if (ap !== bp) return ap - bp;
+      // 거래소(KR 먼저) → 카테고리 → 변동률 절대값
+      if (a.exchange !== b.exchange) return a.exchange === 'KR' ? -1 : 1;
+      const aOrd = CATEGORY_ORDER[a.category];
+      const bOrd = CATEGORY_ORDER[b.category];
+      if (aOrd !== bOrd) return aOrd - bOrd;
       return Math.abs(b.pct) - Math.abs(a.pct);
     });
   })();
 
-  const groups = { nasdaq: [] as TickerItem[], sp500: [] as TickerItem[], korea: [] as TickerItem[] };
-  tickerItems.forEach(t => { groups[getGroup(t.name)].push(t); });
+  const krItems = tickerItems.filter(t => t.exchange === 'KR');
+  const usItems = tickerItems.filter(t => t.exchange === 'US');
+
+  // 한국장 카테고리별 그룹
+  const krByCategory: Array<{ category: HoldingClass; label: string; items: TickerItem[] }> = (() => {
+    const map = new Map<HoldingClass, TickerItem[]>();
+    krItems.forEach(t => {
+      const arr = map.get(t.category) ?? [];
+      arr.push(t);
+      map.set(t.category, arr);
+    });
+    const order: HoldingClass[] = ['kr_domestic', 'kr_listed_overseas', 'mixed_tdf'];
+    return order
+      .filter(c => map.has(c))
+      .map(c => ({
+        category: c,
+        label: map.get(c)![0].shortLabel,
+        items: map.get(c)!,
+      }));
+  })();
+
+  const nasdaqPct = (() => {
+    const arr = krItems.filter(t => t.category === 'kr_listed_overseas' && /나스닥|nasdaq|미국테크|qqq/i.test(t.name))
+                 .concat(usItems);
+    if (arr.length === 0) return null;
+    return arr.reduce((s, t) => s + t.pct, 0) / arr.length;
+  })();
+  const koreaPct = (() => {
+    const arr = krItems.filter(t => t.category === 'kr_domestic');
+    if (arr.length === 0) return null;
+    return arr.reduce((s, t) => s + t.pct, 0) / arr.length;
+  })();
 
   return (
     <>
@@ -402,37 +477,100 @@ export default function Header({
         </div>
       </header>
 
-      {/* ── Non-sticky: 시장 현황 대시보드 (접기/펴기) ── */}
+      {/* ── Non-sticky: 시장 현황 대시보드 (한국장 / 미국장 분리) ── */}
       {tickerItems.length > 0 && (
-        <div className="bg-toss-card border-b border-toss-border">
-          <div className="max-w-7xl mx-auto px-5 py-3 space-y-2.5">
-            {/* 대표 지수 요약 + 접기 버튼 */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex flex-wrap gap-2 flex-1">
-                {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                  <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} sparkData={sparklines?.[g]} />
-                ))}
-                {groups.korea.length > 0 && (
-                  <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} sparkData={sparklines?.korea} />
-                )}
-              </div>
+        <div className="bg-toss-bg/40 border-b border-toss-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-5 py-3 space-y-3">
+            {/* 시장 상태 카드 (한국장 + 미국장) */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              {krItems.length > 0 && (
+                <MarketStatusCard
+                  exchange="KR"
+                  indexLabel="코스피 (보유 국내 ETF 평균)"
+                  indexPct={koreaPct}
+                  sparkData={sparklines?.korea}
+                />
+              )}
+              {(usItems.length > 0 || krItems.some(t => t.category === 'kr_listed_overseas')) && (
+                <MarketStatusCard
+                  exchange="US"
+                  indexLabel="나스닥 (보유 미국 자산 평균)"
+                  indexPct={nasdaqPct}
+                  sparkData={sparklines?.nasdaq}
+                />
+              )}
               <button
                 onClick={toggleMarket}
                 aria-label={marketOpen ? '시장 현황 접기' : '시장 현황 펴기'}
                 aria-expanded={marketOpen}
-                className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all shrink-0"
+                className="self-start sm:self-stretch px-3 py-2 rounded-2xl bg-toss-card border border-toss-border hover:bg-toss-bg active:scale-95 transition-all shrink-0"
               >
                 {marketOpen
                   ? <ChevronUp size={16} className="text-toss-text-tertiary" />
                   : <ChevronDown size={16} className="text-toss-text-tertiary" />}
               </button>
             </div>
-            {/* 보유 종목 카드 그리드 */}
+
+            {/* 보유 종목 — 시장별 + 카테고리별 그룹 */}
             {marketOpen && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {tickerItems.map((item, i) => (
-                  <HoldingCard key={i} item={item} />
-                ))}
+              <div className="space-y-3">
+                {/* 한국장 종목들 */}
+                {krItems.length > 0 && (
+                  <section>
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      <span className="text-base leading-none" aria-hidden>🇰🇷</span>
+                      <h3 className="text-[12px] font-bold text-toss-text-primary">한국장 종목</h3>
+                      <span className="text-[10px] text-toss-text-tertiary">{krItems.length}개</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {krByCategory.map(group => (
+                        <div key={group.category}>
+                          <div className="flex items-center gap-1.5 mb-1 px-1">
+                            <span
+                              className="inline-block w-1 h-3 rounded-full"
+                              style={{ background: group.items[0].accentColor }}
+                            />
+                            <span className="text-[11px] font-semibold text-toss-text-secondary">
+                              {group.label}
+                            </span>
+                            <span className="text-[10px] text-toss-text-tertiary">{group.items.length}</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                            {group.items.map((item, i) => (
+                              <HoldingCard key={i} item={item} />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* 미국장 종목들 */}
+                {usItems.length > 0 && (
+                  <section>
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      <span className="text-base leading-none" aria-hidden>🇺🇸</span>
+                      <h3 className="text-[12px] font-bold text-toss-text-primary">미국장 종목</h3>
+                      <span className="text-[10px] text-toss-text-tertiary">{usItems.length}개</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1 px-1">
+                        <span
+                          className="inline-block w-1 h-3 rounded-full"
+                          style={{ background: usItems[0].accentColor }}
+                        />
+                        <span className="text-[11px] font-semibold text-toss-text-secondary">해외 직투</span>
+                        <span className="text-[10px] text-toss-text-tertiary">{usItems.length}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                        {usItems.map((item, i) => (
+                          <HoldingCard key={i} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                )}
               </div>
             )}
           </div>

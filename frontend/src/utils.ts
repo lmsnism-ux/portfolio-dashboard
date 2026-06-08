@@ -88,3 +88,157 @@ export function isLongTermAccount(type: string): boolean {
 export function isRetirementAccount(type: string): boolean {
   return /DC|퇴직/i.test(type);
 }
+
+// ── 시장(거래소) 분류 ──────────────────────────────────────
+// 같은 시점에 "한국장은 휴장 / 미국장은 진행 중" 인 경우, 보유 종목의 가격 정보 시점이 다르다.
+// 따라서 거래 시장(KR vs US)을 명확히 구분해 표시한다.
+
+export type Exchange = 'KR' | 'US';
+
+/**
+ * 종목 세부 분류.
+ * - us_direct:           해외 직투 ETF/주식 (USD 결제, 미국장 거래)
+ * - kr_listed_overseas:  국내 상장 해외 ETF (KRW 결제, 한국장 거래, 추종 자산은 해외)
+ * - kr_domestic:         국내 ETF/주식 (KRW 결제, 한국장 거래, 추종 자산도 국내)
+ * - mixed_tdf:           TDF/혼합형 등 글로벌 분산 자산
+ * - cash:                현금/예수금/예금 — 시장 구분 없음
+ */
+export type HoldingClass =
+  | 'us_direct'
+  | 'kr_listed_overseas'
+  | 'kr_domestic'
+  | 'mixed_tdf'
+  | 'cash';
+
+export interface HoldingClassification {
+  exchange: Exchange;       // KR or US
+  category: HoldingClass;
+  /** UI 표시용 짧은 라벨 */
+  shortLabel: string;
+  /** 색상 토큰 (Tailwind class용 prefix) */
+  accentColor: string;
+}
+
+interface HoldingLike {
+  name: string;
+  ticker?: string | null;
+  currency?: string;
+  region?: string;
+  asset_class?: string;
+  is_snapshot?: boolean;
+}
+
+export function classifyHolding(h: HoldingLike): HoldingClassification {
+  const cls = h.asset_class ?? '';
+  const region = h.region ?? '';
+  const isUsdPrice = h.currency === 'USD';
+
+  // 현금·예금
+  if (/현금|예금|예수금/.test(cls) || (h.is_snapshot && !h.ticker)) {
+    return {
+      exchange: isUsdPrice ? 'US' : 'KR',
+      category: 'cash',
+      shortLabel: '현금·예금',
+      accentColor: '#9CA3AF',
+    };
+  }
+
+  // TDF·혼합형
+  if (/혼합|TDF/i.test(cls)) {
+    return {
+      exchange: 'KR',
+      category: 'mixed_tdf',
+      shortLabel: 'TDF·혼합형',
+      accentColor: '#F5A623',
+    };
+  }
+
+  // 해외 직투 (USD 결제)
+  if (isUsdPrice) {
+    return {
+      exchange: 'US',
+      category: 'us_direct',
+      shortLabel: '해외 직투',
+      accentColor: '#8B5CF6',
+    };
+  }
+
+  // KRW 결제: region이 국내가 아니면 국내 상장 해외 ETF
+  if (region && region !== '국내') {
+    return {
+      exchange: 'KR',
+      category: 'kr_listed_overseas',
+      shortLabel: '국내상장 해외 ETF',
+      accentColor: '#3182F6',
+    };
+  }
+
+  return {
+    exchange: 'KR',
+    category: 'kr_domestic',
+    shortLabel: '국내 ETF',
+    accentColor: '#10B981',
+  };
+}
+
+// ── 시장 시간 (KST 기준) ────────────────────────────────────
+
+export interface MarketStatus {
+  exchange: Exchange;
+  /** 'open' | 'closed' (주말/시간외) | 'pre' (정규장 전) | 'post' (정규장 후) */
+  state: 'open' | 'closed' | 'pre' | 'post';
+  label: string;       // "진행중" | "휴장" | "장 마감" | "장 시작 전"
+  timeLabel: string;   // "09:00 ~ 15:30 (KST)" 등 보조 설명
+}
+
+/**
+ * 한국장: 평일 09:00~15:30 KST
+ * 미국장: 평일 09:30~16:00 ET (서머타임이면 KST 22:30~05:00, 동절기 23:30~06:00)
+ *   — 단순화를 위해 KST 22:30~06:00 을 'open' 으로 본다 (날짜 경계 처리).
+ */
+export function getMarketStatus(exchange: Exchange, now: Date = new Date()): MarketStatus {
+  // KST = UTC+9. 브라우저 로컬 시간을 KST로 변환
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+  const kst = new Date(utcMs + 9 * 60 * 60 * 1000);
+  const dow = kst.getUTCDay(); // 0=Sun, 6=Sat
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+
+  if (exchange === 'KR') {
+    const open = 9 * 60;        // 09:00
+    const close = 15 * 60 + 30; // 15:30
+    if (dow === 0 || dow === 6) {
+      return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 09:00 ~ 15:30 (KST)' };
+    }
+    if (minutes < open) return { exchange, state: 'pre', label: '장 시작 전', timeLabel: `09:00 개장 (KST)` };
+    if (minutes > close) return { exchange, state: 'post', label: '장 마감', timeLabel: `15:30 마감 (KST)` };
+    return { exchange, state: 'open', label: '진행중', timeLabel: '15:30 마감 (KST)' };
+  }
+
+  // 미국장 (단순화: KST 22:30~05:00 익일을 'open' 으로 간주)
+  // dow 기준: 미장 정규장은 한국시간 화~토 새벽까지 (월요일 미장은 화요일 새벽)
+  const openMin  = 22 * 60 + 30;        // 22:30
+  const closeMin = 5 * 60;              // 05:00 (익일)
+
+  const isWeekendKST = (dow === 0 || dow === 6);
+  // 일요일 새벽 또는 토요일 저녁은 미장 휴장
+  if (isWeekendKST) {
+    if (dow === 6 && minutes < closeMin) {
+      // 토요일 새벽은 금요일 미장 마감 이후 시점 → closed
+      return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+    }
+    return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+  }
+  // 월요일 0시~05시: 일요일 새벽 = 미장 휴장
+  if (dow === 1 && minutes < closeMin) {
+    return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+  }
+
+  if (minutes >= openMin || minutes < closeMin) {
+    return { exchange, state: 'open', label: '진행중', timeLabel: '익일 05:00 마감 (KST)' };
+  }
+  if (minutes < openMin && minutes >= closeMin + 60) {
+    // 일 중 휴식 시간 (05:00~22:30)
+    return { exchange, state: 'post', label: '장 마감', timeLabel: '오늘 22:30 개장 (KST)' };
+  }
+  return { exchange, state: 'pre', label: '장 시작 전', timeLabel: '22:30 개장 (KST)' };
+}
