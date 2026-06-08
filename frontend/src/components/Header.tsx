@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import type { } from 'react';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime } from '../utils';
@@ -50,39 +50,45 @@ interface Props {
   dark: boolean;
   hideAssets: boolean;
   realEstateOn: boolean;
+  dcOn: boolean;
   onToggleDark: () => void;
   onToggleHide: () => void;
   onRefresh: () => void;
+  onToggleDc: () => void;
   isRefreshing: boolean;
 }
 
 type TickerItem = { name: string; pct: number; krwChange: number | null; catOrder: number };
 
 function GroupHeaderBadge({ label, pct }: { label: string; pct: number }) {
-  const bgClass = pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft';
+  const isPos = pct >= 0;
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-default shrink-0 ${bgClass}`}>
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border cursor-default shrink-0 ${
+      isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
+    }`}>
       <span className="text-[12px] text-toss-text-secondary whitespace-nowrap font-semibold">{label}</span>
-      <span className={`num text-[14px] font-bold whitespace-nowrap ${colorClass(pct)}`}>
-        {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+      <span className={`num text-[14px] font-extrabold whitespace-nowrap ${colorClass(pct)}`}>
+        {isPos ? '+' : ''}{pct.toFixed(2)}%
       </span>
     </div>
   );
 }
 
 function Badge({ item, hideAssets }: { item: TickerItem; hideAssets: boolean }) {
-  const bgClass = item.pct >= 0 ? 'bg-toss-up-soft' : 'bg-toss-down-soft';
+  const isPos = item.pct >= 0;
   const titleAttr = `${item.name}${item.krwChange !== null && !hideAssets ? ' · ' + (item.krwChange >= 0 ? '+' : '') + fmtKRW(item.krwChange) : ''}`;
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-0.5 rounded-lg cursor-default shrink-0 ${bgClass}`}
+      className={`flex items-center gap-1 px-2 py-0.5 rounded-md cursor-default shrink-0 border ${
+        isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
+      }`}
       title={titleAttr}
     >
       <span className="text-[10px] text-toss-text-secondary whitespace-nowrap font-medium">
         {shortTickerName(item.name)}
       </span>
       <span className={`num text-[10px] font-bold whitespace-nowrap ${colorClass(item.pct)}`}>
-        {item.pct >= 0 ? '+' : ''}{item.pct.toFixed(1)}%
+        {isPos ? '+' : ''}{item.pct.toFixed(2)}%
       </span>
     </div>
   );
@@ -95,26 +101,27 @@ export default function Header({
   dark,
   hideAssets,
   realEstateOn,
+  dcOn,
   onToggleDark,
   onToggleHide,
   onRefresh,
+  onToggleDc,
   isRefreshing,
 }: Props) {
-  const [excludeLong, setExcludeLong] = useState(false);
-
-  const longTermAccs = data.accounts.filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type));
-  const longTermKrw    = longTermAccs.reduce((s, a) => s + a.value_krw, 0);
-  const longTermDayChg = longTermAccs.reduce((s, a) => s + a.day_change_krw, 0);
-  const longTermProfit = longTermAccs.reduce((s, a) => s + a.profit_krw, 0);
-  const longTermCost   = longTermAccs.reduce((s, a) => s + a.cost_krw, 0);
+  const dcAccs    = data.accounts.filter(a => /DC|퇴직/i.test(a.type));
+  const dcKrw     = dcAccs.reduce((s, a) => s + a.value_krw, 0);
+  const dcDayChg  = dcAccs.reduce((s, a) => s + a.day_change_krw, 0);
+  const dcProfit  = dcAccs.reduce((s, a) => s + a.profit_krw, 0);
+  const dcCost    = dcAccs.reduce((s, a) => s + a.cost_krw, 0);
 
   const reEquity = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
   const reCost   = realEstateOn ? 0 : (data.real_estate_cost_krw ?? 0);
+  const dcExclude = dcOn ? 0 : dcKrw;
 
-  const displayTotal     = data.total_value_krw  - (excludeLong ? longTermKrw : 0) - reEquity;
-  const displayDayChg    = data.total_day_change_krw - (excludeLong ? longTermDayChg : 0);
-  const displayProfit    = data.total_profit_krw - (excludeLong ? longTermProfit : 0) - (reEquity - reCost);
-  const investCost       = data.total_cost_krw - (excludeLong ? longTermCost : 0) - reCost;
+  const displayTotal     = data.total_value_krw - dcExclude - reEquity;
+  const displayDayChg    = data.total_day_change_krw - (dcOn ? 0 : dcDayChg);
+  const displayProfit    = data.total_profit_krw - (dcOn ? 0 : dcProfit) - (reEquity - reCost);
+  const investCost       = data.total_cost_krw - (dcOn ? 0 : dcCost) - reCost;
   const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
   const prevTotal        = displayTotal - displayDayChg;
   const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
@@ -189,16 +196,16 @@ export default function Header({
           <div className="mb-3">
             <div className="flex items-center gap-2 mb-1.5">
               <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase">총 자산</p>
-              {longTermKrw > 0 && (
+              {dcKrw > 0 && (
                 <button
-                  onClick={() => setExcludeLong(e => !e)}
+                  onClick={onToggleDc}
                   className={`text-[9px] px-2 py-0.5 rounded-full border font-medium transition-all ${
-                    excludeLong
+                    !dcOn
                       ? 'border-indigo-400/40 text-indigo-400 bg-indigo-500/10'
                       : 'border-toss-border text-toss-text-tertiary hover:border-toss-text-tertiary'
                   }`}
                 >
-                  {excludeLong ? '장기 제외' : '전체'}
+                  {dcOn ? '전체' : '퇴직연금 제외'}
                 </button>
               )}
             </div>
@@ -208,7 +215,7 @@ export default function Header({
             {!hideAssets && (
               <p className="num text-xs text-toss-text-tertiary mt-1.5 flex items-center gap-2">
                 {fmtKRWFull(displayTotal)}
-                {excludeLong && <span className="text-indigo-400 font-medium">· 연금 제외</span>}
+                {!dcOn && <span className="text-indigo-400 font-medium">· 퇴직연금 제외</span>}
               </p>
             )}
           </div>
@@ -262,43 +269,56 @@ export default function Header({
         </div>
       </header>
 
-      {/* ── Non-sticky: 금일 주가 배지 (미국 / 한국 섹션) ── */}
+      {/* ── Non-sticky: 보유 종목 시세 ── */}
       {tickerItems.length > 0 && (
         <div className="bg-toss-card border-b border-toss-border">
-          <div className="max-w-7xl mx-auto px-5 py-3">
-            <div className="flex flex-col sm:flex-row gap-2">
+          <div className="max-w-7xl mx-auto px-5">
+            <div className="divide-y divide-toss-border/40">
+
               {/* 미국 주식 */}
               {hasUs && (
-                <div className="sm:flex-1 rounded-2xl bg-toss-bg px-3.5 pt-2.5 pb-3">
-                  <p className="text-[9px] font-bold text-toss-text-tertiary/80 tracking-[0.12em] uppercase mb-2">미국 주식</p>
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                      <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
-                    ))}
+                <div className="py-3 flex items-start gap-4">
+                  <div className="flex flex-col items-center w-10 shrink-0 pt-0.5 gap-0.5">
+                    <span className="text-[18px] leading-none">🇺🇸</span>
+                    <span className="text-[8px] font-bold text-toss-text-tertiary tracking-wider">US</span>
                   </div>
-                  {usDetailItems.length > 0 && (
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                      ))}
+                    </div>
+                    {usDetailItems.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {usDetailItems.map((item, i) => (
+                          <Badge key={i} item={item} hideAssets={hideAssets} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 국내 주식 */}
+              {groups.korea.length > 0 && (
+                <div className="py-3 flex items-start gap-4">
+                  <div className="flex flex-col items-center w-10 shrink-0 pt-0.5 gap-0.5">
+                    <span className="text-[18px] leading-none">🇰🇷</span>
+                    <span className="text-[8px] font-bold text-toss-text-tertiary tracking-wider">KR</span>
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                    </div>
                     <div className="flex flex-wrap gap-1">
-                      {usDetailItems.map((item, i) => (
+                      {groups.korea.map((item, i) => (
                         <Badge key={i} item={item} hideAssets={hideAssets} />
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
-              {/* 국내 주식 */}
-              {groups.korea.length > 0 && (
-                <div className="sm:flex-1 rounded-2xl bg-toss-bg px-3.5 pt-2.5 pb-3">
-                  <p className="text-[9px] font-bold text-toss-text-tertiary/80 tracking-[0.12em] uppercase mb-2">국내 주식</p>
-                  <div className="mb-1.5">
-                    <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {groups.korea.map((item, i) => (
-                      <Badge key={i} item={item} hideAssets={hideAssets} />
-                    ))}
                   </div>
                 </div>
               )}
+
             </div>
           </div>
         </div>

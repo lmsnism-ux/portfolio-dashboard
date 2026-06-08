@@ -21,6 +21,7 @@ import type { AccountData, HoldingData } from './types';
 const HIDE_KEY = 'pd_hide_assets';
 const DARK_KEY = 'pd_dark';
 const RE_KEY = 'pd_realestate_show';
+const DC_KEY = 'pd_dc_show';
 
 export default function App() {
   const [dark, setDark] = useState(() => {
@@ -37,10 +38,19 @@ export default function App() {
   const [adding, setAdding] = useState<AccountData | null>(null);
   const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData } | null>(null);
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
+  const [dcOn, setDcOn] = useState(() => localStorage.getItem(DC_KEY) !== '0');
 
   const handleRealEstateToggle = (on: boolean) => {
     setRealEstateOn(on);
     localStorage.setItem(RE_KEY, on ? '1' : '0');
+  };
+
+  const handleDcToggle = () => {
+    setDcOn(prev => {
+      const next = !prev;
+      localStorage.setItem(DC_KEY, next ? '1' : '0');
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -111,9 +121,11 @@ export default function App() {
         dark={dark}
         hideAssets={hideAssets}
         realEstateOn={realEstateOn}
+        dcOn={dcOn}
         onToggleDark={() => setDark((d) => !d)}
         onToggleHide={() => setHideAssets((h) => !h)}
         onRefresh={() => refreshMutation.mutate()}
+        onToggleDc={handleDcToggle}
         isRefreshing={refreshMutation.isPending}
       />
 
@@ -159,11 +171,14 @@ export default function App() {
           const longTermKrw = data.accounts
             .filter(a => /IRP|DC|퇴직|연금|연금저축/i.test(a.type))
             .reduce((s, a) => s + a.value_krw, 0);
+          const dcKrw = dcOn ? 0 : data.accounts
+            .filter(a => /DC|퇴직/i.test(a.type))
+            .reduce((s, a) => s + a.value_krw, 0);
           const reExcluded = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
           return (
             <GoalCard
               goalKrw={data.goal_krw}
-              currentKrw={data.total_value_krw - reExcluded}
+              currentKrw={data.total_value_krw - reExcluded - dcKrw}
               progressPct={data.goal_progress_pct}
               hideAssets={hideAssets}
               longTermKrw={longTermKrw}

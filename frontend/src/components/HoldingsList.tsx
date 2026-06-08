@@ -8,11 +8,13 @@ const HIDDEN_KEY = 'pd_hidden';
 const ORDER_KEY = 'pd_horder';
 const CAT_ORDER_KEY = 'pd_catorder';
 
-const DEFAULT_CATS = ['투자', '연금', '저축', '기타'];
+const DEFAULT_CATS = ['투자', '개인연금', '퇴직연금', '저축', '기타'];
 
 function topCat(type: string): string {
   if (/주식|ISA|CMA|기본계좌|증권/i.test(type)) return '투자';
-  if (/IRP|DC|퇴직|연금|연금저축/i.test(type)) return '연금';
+  if (/IRP|연금저축/i.test(type)) return '개인연금';
+  if (/DC|퇴직/i.test(type)) return '퇴직연금';
+  if (/연금/i.test(type)) return '개인연금';
   if (/적금|예금|저축/i.test(type)) return '저축';
   return '기타';
 }
@@ -98,7 +100,18 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
   const [catOrder, setCatOrder] = useState<string[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(CAT_ORDER_KEY) || 'null');
-      return saved ?? [...DEFAULT_CATS];
+      if (!saved) return [...DEFAULT_CATS];
+      // '연금' → '개인연금' + '퇴직연금' 마이그레이션
+      const migrated: string[] = [];
+      for (const c of saved) {
+        if (c === '연금') { migrated.push('개인연금', '퇴직연금'); }
+        else { migrated.push(c); }
+      }
+      if (!migrated.includes('개인연금')) migrated.splice(1, 0, '개인연금');
+      if (!migrated.includes('퇴직연금')) {
+        migrated.splice(migrated.indexOf('개인연금') + 1, 0, '퇴직연금');
+      }
+      return migrated;
     }
     catch { return [...DEFAULT_CATS]; }
   });
@@ -258,19 +271,15 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
               <div className="flex items-center justify-between px-4 py-4 border-b border-toss-border/60">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[15px] font-bold text-toss-text-primary">{cat}</span>
-                  {cat === '연금' && !editMode && (
-                    <>
-                      {accounts.some(a => /DC|퇴직/i.test(a.type)) && (
-                        <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          퇴직 시 수령
-                        </span>
-                      )}
-                      {accounts.some(a => /IRP|연금저축/i.test(a.type)) && (
-                        <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          55세 이후 수령
-                        </span>
-                      )}
-                    </>
+                  {cat === '개인연금' && !editMode && (
+                    <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      55세 이후 수령
+                    </span>
+                  )}
+                  {cat === '퇴직연금' && !editMode && (
+                    <span className="text-[10px] font-semibold text-violet-400 bg-violet-500/10 border border-violet-400/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      퇴직 시 수령
+                    </span>
                   )}
                   {/* 편집 모드: 카테고리 순서 변경 */}
                   {editMode && (
@@ -419,7 +428,9 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                     </span>
                                   )}
                                   {h.current_price_display && (
-                                    <span className="num">· 현재 {h.current_price_display}</span>
+                                    <span className="num">
+                                      · {h.price_label === '실시간' ? '현재가' : '종가'} {h.current_price_display}
+                                    </span>
                                   )}
                                 </p>
                               )}
