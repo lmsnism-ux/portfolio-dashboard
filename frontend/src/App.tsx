@@ -17,6 +17,7 @@ import type { AccountData, HoldingData } from './types';
 
 const HIDE_KEY = 'pd_hide_assets';
 const DARK_KEY = 'pd_dark';
+const RE_KEY = 'pd_realestate_show';
 
 export default function App() {
   const [dark, setDark] = useState(() => {
@@ -32,6 +33,12 @@ export default function App() {
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
   const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData } | null>(null);
+  const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
+
+  const handleRealEstateToggle = (on: boolean) => {
+    setRealEstateOn(on);
+    localStorage.setItem(RE_KEY, on ? '1' : '0');
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -100,6 +107,7 @@ export default function App() {
         data={data}
         dark={dark}
         hideAssets={hideAssets}
+        realEstateOn={realEstateOn}
         onToggleDark={() => setDark((d) => !d)}
         onToggleHide={() => setHideAssets((h) => !h)}
         onRefresh={() => refreshMutation.mutate()}
@@ -112,7 +120,12 @@ export default function App() {
 
         {/* 부동산 · 대출 - HistoryChart 바로 아래 */}
         {data.real_estate && (
-          <RealEstateCard data={data.real_estate} hideAssets={hideAssets} />
+          <RealEstateCard
+            data={data.real_estate}
+            hideAssets={hideAssets}
+            visible={realEstateOn}
+            onToggle={handleRealEstateToggle}
+          />
         )}
 
         {/* 도넛 차트 3개 나란히 */}

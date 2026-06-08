@@ -6,9 +6,9 @@ import { fmtKRW, fmtKRWFull, colorClass } from '../utils';
 interface Props {
   data: RealEstateData;
   hideAssets: boolean;
+  visible: boolean;
+  onToggle: (on: boolean) => void;
 }
-
-const SHOW_KEY = 'pd_realestate_show';
 
 // 말일 납부일 계산 (말일 주말이면 다음 달 첫 영업일)
 function getPaymentDate(year: number, month: number): Date {
@@ -32,17 +32,13 @@ function fmtDate(d: Date): string {
   return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
-export default function RealEstateCard({ data, hideAssets }: Props) {
-  const [visible, setVisible] = useState(
-    () => localStorage.getItem(SHOW_KEY) !== '0'
-  );
-  const [open, setOpen] = useState(() => localStorage.getItem(SHOW_KEY) !== '0');
+export default function RealEstateCard({ data, hideAssets, visible, onToggle }: Props) {
+  const [open, setOpen] = useState(visible);
 
   const toggleVisible = () => {
     const next = !visible;
-    setVisible(next);
-    setOpen(next);
-    localStorage.setItem(SHOW_KEY, next ? '1' : '0');
+    onToggle(next);
+    if (next) setOpen(true);
   };
 
   if (data.properties.length === 0) return null;

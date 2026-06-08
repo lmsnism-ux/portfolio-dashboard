@@ -49,6 +49,7 @@ interface Props {
   data: PortfolioSummary;
   dark: boolean;
   hideAssets: boolean;
+  realEstateOn: boolean;
   onToggleDark: () => void;
   onToggleHide: () => void;
   onRefresh: () => void;
@@ -93,6 +94,7 @@ export default function Header({
   data,
   dark,
   hideAssets,
+  realEstateOn,
   onToggleDark,
   onToggleHide,
   onRefresh,
@@ -106,10 +108,13 @@ export default function Header({
   const longTermProfit = longTermAccs.reduce((s, a) => s + a.profit_krw, 0);
   const longTermCost   = longTermAccs.reduce((s, a) => s + a.cost_krw, 0);
 
-  const displayTotal     = excludeLong ? data.total_value_krw      - longTermKrw    : data.total_value_krw;
-  const displayDayChg    = excludeLong ? data.total_day_change_krw - longTermDayChg : data.total_day_change_krw;
-  const displayProfit    = excludeLong ? data.total_profit_krw     - longTermProfit : data.total_profit_krw;
-  const investCost       = data.total_cost_krw - (excludeLong ? longTermCost : 0);
+  const reEquity = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
+  const reCost   = realEstateOn ? 0 : (data.real_estate_cost_krw ?? 0);
+
+  const displayTotal     = data.total_value_krw  - (excludeLong ? longTermKrw : 0) - reEquity;
+  const displayDayChg    = data.total_day_change_krw - (excludeLong ? longTermDayChg : 0);
+  const displayProfit    = data.total_profit_krw - (excludeLong ? longTermProfit : 0) - (reEquity - reCost);
+  const investCost       = data.total_cost_krw - (excludeLong ? longTermCost : 0) - reCost;
   const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
   const prevTotal        = displayTotal - displayDayChg;
   const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);

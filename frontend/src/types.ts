@@ -134,6 +134,8 @@ export interface PortfolioSummary {
   market_status: 'live' | 'closed';
   day_change_label: string;
   real_estate?: RealEstateData;
+  real_estate_equity_krw?: number;
+  real_estate_cost_krw?: number;
   calculated_at: string;
   price_updated_at: string | null;
   cache_stale_hours: number | null;
