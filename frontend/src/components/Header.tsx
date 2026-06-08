@@ -142,46 +142,46 @@ export default function Header({
   const groups = { nasdaq: [] as TickerItem[], sp500: [] as TickerItem[], korea: [] as TickerItem[] };
   tickerItems.forEach(t => { groups[getGroup(t.name)].push(t); });
   const hasUs = groups.nasdaq.length > 0 || groups.sp500.length > 0;
-  // 나스닥은 여러 종목이므로 모두 개별 표시, S&P500이 2개 이상이면 추가
   const usDetailItems = [...groups.nasdaq, ...(groups.sp500.length > 1 ? groups.sp500 : [])];
 
   return (
-    <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
-      {data.cache_is_stale && (
-        <div className="bg-toss-up-soft text-toss-up text-xs px-4 py-2 flex items-center gap-2">
-          <AlertTriangle size={13} />
-          <span>가격 데이터가 {data.cache_stale_hours}시간 동안 갱신되지 않았어요. 새로고침을 눌러보세요.</span>
-        </div>
-      )}
-
-      <div className="max-w-7xl mx-auto px-5 pt-4 pb-5">
-        {/* 상단 바 */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-toss-text-secondary">내 포트폴리오</span>
-            <span
-              className="text-[10px] text-toss-text-tertiary bg-toss-bg px-2 py-0.5 rounded-full cursor-default"
-              title={`마지막 갱신: ${data.price_updated_at ?? '-'} | ${relativeTime(data.price_updated_at)}`}
-            >
-              {fmtAbsTime(data.price_updated_at)} 기준
-            </span>
+    <>
+      {/* ── Sticky 헤더: 총자산 / 등락 / 수익 / 환율 ── */}
+      <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
+        {data.cache_is_stale && (
+          <div className="bg-toss-up-soft text-toss-up text-xs px-4 py-2 flex items-center gap-2">
+            <AlertTriangle size={13} />
+            <span>가격 데이터가 {data.cache_stale_hours}시간 동안 갱신되지 않았어요. 새로고침을 눌러보세요.</span>
           </div>
-          <div className="flex items-center gap-0.5">
-            <button onClick={onToggleHide} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={hideAssets ? '자산 보기' : '자산 가리기'}>
-              {hideAssets ? <EyeOff size={17} className="text-toss-text-secondary" /> : <Eye size={17} className="text-toss-text-secondary" />}
-            </button>
-            <button onClick={onRefresh} disabled={isRefreshing} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50" title="가격 갱신">
-              <RefreshCw size={17} className={`text-toss-text-secondary ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={dark ? '라이트 모드' : '다크 모드'}>
-              {dark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-toss-text-secondary" />}
-            </button>
-          </div>
-        </div>
+        )}
 
-        {/* 총자산 + 데스크탑 배지 */}
-        <div className="mb-3 flex items-start gap-5">
-          <div className="flex-1 min-w-0">
+        <div className="max-w-7xl mx-auto px-5 pt-4 pb-4">
+          {/* 상단 바 */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-toss-text-secondary">내 포트폴리오</span>
+              <span
+                className="text-[10px] text-toss-text-tertiary bg-toss-bg px-2 py-0.5 rounded-full cursor-default"
+                title={`마지막 갱신: ${data.price_updated_at ?? '-'} | ${relativeTime(data.price_updated_at)}`}
+              >
+                {fmtAbsTime(data.price_updated_at)} 기준
+              </span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <button onClick={onToggleHide} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={hideAssets ? '자산 보기' : '자산 가리기'}>
+                {hideAssets ? <EyeOff size={17} className="text-toss-text-secondary" /> : <Eye size={17} className="text-toss-text-secondary" />}
+              </button>
+              <button onClick={onRefresh} disabled={isRefreshing} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50" title="가격 갱신">
+                <RefreshCw size={17} className={`text-toss-text-secondary ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+              <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-toss-bg active:scale-95 transition-all" title={dark ? '라이트 모드' : '다크 모드'}>
+                {dark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-toss-text-secondary" />}
+              </button>
+            </div>
+          </div>
+
+          {/* 총자산 */}
+          <div className="mb-3">
             <div className="flex items-center gap-2 mb-1.5">
               <p className="text-[11px] font-medium text-toss-text-tertiary tracking-widest uppercase">총 자산</p>
               {longTermKrw > 0 && (
@@ -208,125 +208,92 @@ export default function Header({
             )}
           </div>
 
-          {/* 데스크탑: 우측 배지 패널 */}
-          {tickerItems.length > 0 && (
-            <div className="hidden md:block shrink-0 pt-1 max-w-[340px]">
-              <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-              <div className="space-y-1.5">
-                {/* 미국 섹션 */}
-                {hasUs && (
-                  <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
-                      ))}
-                    </div>
-                    {usDetailItems.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {usDetailItems.map((item, i) => (
-                          <Badge key={i} item={item} hideAssets={hideAssets} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+          {/* 오늘 등락 / 누적 수익 / 환율 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
+                <span className="text-[11px] text-toss-text-tertiary/50">·</span>
+                <span className="text-[10px] text-toss-text-tertiary/70">{fmtAbsTime(data.price_updated_at)}</span>
+                {data.market_status === 'closed' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
                 )}
-                {/* 한국 섹션 */}
-                {groups.korea.length > 0 && (
-                  <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
-                    <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                {data.market_status === 'live' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-toss-up animate-pulse" title="장중" />
+                )}
+              </div>
+              <span className={`num text-sm font-bold ${dayColor}`}>
+                {hideAssets ? MASK : (displayDayChg >= 0 ? '+' : '') + fmtKRW(displayDayChg)}
+              </span>
+              <span className={`num text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                displayDayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
+              }`}>
+                {fmtPct(displayDayPct)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-toss-text-tertiary">누적 수익</span>
+              <span className={`num text-sm font-bold ${profitColor}`}>
+                {hideAssets ? MASK : (displayProfit >= 0 ? '+' : '') + fmtKRW(displayProfit)}
+              </span>
+              <span className={`num text-xs font-semibold ${profitColor}`}>
+                {fmtPct(displayProfitPct)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-[11px] text-toss-text-tertiary">USD/KRW</span>
+              <span className="num text-sm font-semibold text-toss-text-secondary">
+                {data.usd_krw?.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
+              </span>
+              {data.usd_krw_prev && (
+                <span className={`num text-[11px] font-medium ${colorClass(data.usd_krw - data.usd_krw_prev)}`}>
+                  {fmtPct(((data.usd_krw - data.usd_krw_prev) / data.usd_krw_prev) * 100)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Non-sticky: 금일 주가 배지 (미국 / 한국 섹션) ── */}
+      {tickerItems.length > 0 && (
+        <div className="bg-toss-card border-b border-toss-border">
+          <div className="max-w-7xl mx-auto px-5 py-3">
+            <div className="flex flex-col sm:flex-row gap-1.5">
+              {/* 미국 (나스닥 + S&P500) */}
+              {hasUs && (
+                <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5 sm:flex-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                      <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                    ))}
+                  </div>
+                  {usDetailItems.length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {groups.korea.map((item, i) => (
+                      {usDetailItems.map((item, i) => (
                         <Badge key={i} item={item} hideAssets={hideAssets} />
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 모바일: 미국/한국 섹션 카드 */}
-        {tickerItems.length > 0 && (
-          <div className="md:hidden mb-3 space-y-1.5">
-            {/* 미국 섹션 */}
-            {hasUs && (
-              <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
-                <div className="flex flex-wrap gap-1.5">
-                  {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
-                    <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
-                  ))}
+                  )}
                 </div>
-                {usDetailItems.length > 0 && (
+              )}
+              {/* 한국 (코스피) */}
+              {groups.korea.length > 0 && (
+                <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5 sm:flex-1">
+                  <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
                   <div className="flex flex-wrap gap-1">
-                    {usDetailItems.map((item, i) => (
+                    {groups.korea.map((item, i) => (
                       <Badge key={i} item={item} hideAssets={hideAssets} />
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-            {/* 한국 섹션 */}
-            {groups.korea.length > 0 && (
-              <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
-                <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
-                <div className="flex flex-wrap gap-1">
-                  {groups.korea.map((item, i) => (
-                    <Badge key={i} item={item} hideAssets={hideAssets} />
-                  ))}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 오늘 등락 / 누적 수익 / 환율 */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
-              <span className="text-[11px] text-toss-text-tertiary/50">·</span>
-              <span className="text-[10px] text-toss-text-tertiary/70">{fmtAbsTime(data.price_updated_at)}</span>
-              {data.market_status === 'closed' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
-              )}
-              {data.market_status === 'live' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-toss-up animate-pulse" title="장중" />
               )}
             </div>
-            <span className={`num text-sm font-bold ${dayColor}`}>
-              {hideAssets ? MASK : (displayDayChg >= 0 ? '+' : '') + fmtKRW(displayDayChg)}
-            </span>
-            <span className={`num text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-              displayDayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
-            }`}>
-              {fmtPct(displayDayPct)}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-toss-text-tertiary">누적 수익</span>
-            <span className={`num text-sm font-bold ${profitColor}`}>
-              {hideAssets ? MASK : (displayProfit >= 0 ? '+' : '') + fmtKRW(displayProfit)}
-            </span>
-            <span className={`num text-xs font-semibold ${profitColor}`}>
-              {fmtPct(displayProfitPct)}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 ml-auto">
-            <span className="text-[11px] text-toss-text-tertiary">USD/KRW</span>
-            <span className="num text-sm font-semibold text-toss-text-secondary">
-              {data.usd_krw?.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
-            </span>
-            {data.usd_krw_prev && (
-              <span className={`num text-[11px] font-medium ${colorClass(data.usd_krw - data.usd_krw_prev)}`}>
-                {fmtPct(((data.usd_krw - data.usd_krw_prev) / data.usd_krw_prev) * 100)}
-              </span>
-            )}
           </div>
         </div>
-      </div>
-    </header>
+      )}
+    </>
   );
 }
