@@ -110,13 +110,13 @@ export default function App() {
         {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
         <HistoryChart data={data} hideAssets={hideAssets} />
 
-        {/* 도넛 차트 3개 나란히 */}
-        <AllocationCard data={data} hideAssets={hideAssets} />
-
-        {/* 부동산 · 대출 */}
+        {/* 부동산 · 대출 - HistoryChart 바로 아래 */}
         {data.real_estate && (
           <RealEstateCard data={data.real_estate} hideAssets={hideAssets} />
         )}
+
+        {/* 도넛 차트 3개 나란히 */}
+        <AllocationCard data={data} hideAssets={hideAssets} />
 
         {/* 종목별 비중 바 차트 */}
         {data.top_holdings?.length > 0 && (
