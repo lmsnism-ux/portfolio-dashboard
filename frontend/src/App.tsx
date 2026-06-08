@@ -113,6 +113,11 @@ export default function App() {
         {/* 도넛 차트 3개 나란히 */}
         <AllocationCard data={data} hideAssets={hideAssets} />
 
+        {/* 부동산 · 대출 */}
+        {data.real_estate && (
+          <RealEstateCard data={data.real_estate} hideAssets={hideAssets} />
+        )}
+
         {/* 종목별 비중 바 차트 */}
         {data.top_holdings?.length > 0 && (
           <HoldingsBar data={data} hideAssets={hideAssets} />
@@ -145,10 +150,6 @@ export default function App() {
           onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
           onMoveAccount={moveAccount}
         />
-
-        {data.real_estate && (
-          <RealEstateCard data={data.real_estate} hideAssets={hideAssets} />
-        )}
 
         <div className="h-4" />
       </main>

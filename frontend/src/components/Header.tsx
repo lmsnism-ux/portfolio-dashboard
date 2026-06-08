@@ -141,7 +141,9 @@ export default function Header({
 
   const groups = { nasdaq: [] as TickerItem[], sp500: [] as TickerItem[], korea: [] as TickerItem[] };
   tickerItems.forEach(t => { groups[getGroup(t.name)].push(t); });
-  const activeGroups = (['nasdaq', 'sp500', 'korea'] as const).filter(g => groups[g].length > 0);
+  const hasUs = groups.nasdaq.length > 0 || groups.sp500.length > 0;
+  // 나스닥은 여러 종목이므로 모두 개별 표시, S&P500이 2개 이상이면 추가
+  const usDetailItems = [...groups.nasdaq, ...(groups.sp500.length > 1 ? groups.sp500 : [])];
 
   return (
     <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
@@ -208,41 +210,73 @@ export default function Header({
 
           {/* 데스크탑: 우측 배지 패널 */}
           {tickerItems.length > 0 && (
-            <div className="hidden md:block shrink-0 pt-1 max-w-[320px]">
+            <div className="hidden md:block shrink-0 pt-1 max-w-[340px]">
               <p className="text-[10px] text-toss-text-tertiary font-medium mb-1.5">종목별 등락</p>
-              <div className="space-y-2">
-                {activeGroups.map(g => (
-                  <div key={g}>
-                    <GroupHeaderBadge label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
-                    {groups[g].length > 1 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {groups[g].map((item, i) => (
+              <div className="space-y-1.5">
+                {/* 미국 섹션 */}
+                {hasUs && (
+                  <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                        <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                      ))}
+                    </div>
+                    {usDetailItems.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {usDetailItems.map((item, i) => (
                           <Badge key={i} item={item} hideAssets={hideAssets} />
                         ))}
                       </div>
                     )}
                   </div>
-                ))}
+                )}
+                {/* 한국 섹션 */}
+                {groups.korea.length > 0 && (
+                  <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
+                    <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                    <div className="flex flex-wrap gap-1">
+                      {groups.korea.map((item, i) => (
+                        <Badge key={i} item={item} hideAssets={hideAssets} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* 모바일: 그룹별 배지 */}
+        {/* 모바일: 미국/한국 섹션 카드 */}
         {tickerItems.length > 0 && (
-          <div className="md:hidden mb-3 space-y-2">
-            {activeGroups.map(g => (
-              <div key={g}>
-                <GroupHeaderBadge label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
-                {groups[g].length > 1 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {groups[g].map((item, i) => (
+          <div className="md:hidden mb-3 space-y-1.5">
+            {/* 미국 섹션 */}
+            {hasUs && (
+              <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
+                    <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
+                  ))}
+                </div>
+                {usDetailItems.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {usDetailItems.map((item, i) => (
                       <Badge key={i} item={item} hideAssets={hideAssets} />
                     ))}
                   </div>
                 )}
               </div>
-            ))}
+            )}
+            {/* 한국 섹션 */}
+            {groups.korea.length > 0 && (
+              <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5">
+                <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                <div className="flex flex-wrap gap-1">
+                  {groups.korea.map((item, i) => (
+                    <Badge key={i} item={item} hideAssets={hideAssets} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
