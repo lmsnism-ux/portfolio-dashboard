@@ -215,12 +215,20 @@ export default function HistoryChart({ data, hideAssets }: Props) {
         <p className="text-[11px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-3">
           투자 수익 확인
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
-          <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
-          <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
-          <MiniStat label="누적 수익" diff={data.total_profit_krw} pct={data.total_profit_pct} hideAssets={hideAssets} />
-        </div>
+        {(() => {
+          const reProfit = (data.real_estate_equity_krw ?? 0) - (data.real_estate_cost_krw ?? 0);
+          const investCost = data.total_cost_krw - (data.real_estate_cost_krw ?? 0);
+          const investProfit = data.total_profit_krw - reProfit;
+          const investProfitPct = investCost > 0 ? (investProfit / investCost * 100) : null;
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
+              <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
+              <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
+              <MiniStat label="누적 수익" diff={investProfit} pct={investProfitPct} hideAssets={hideAssets} />
+            </div>
+          );
+        })()}
       </div>
 
       {/* 기간별 수익분석 차트 */}

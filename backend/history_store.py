@@ -33,8 +33,16 @@ def _conn() -> sqlite3.Connection:
 
 
 def record_snapshot_from_summary(summary: dict) -> None:
-    """오늘 날짜(KST) 기준으로 1행만 유지."""
+    """오늘 날짜(KST) 기준으로 1행만 유지. 히스토리는 투자 계좌만 반영 (부동산 제외)."""
     today = datetime.now(KST).date().isoformat()
+    re_equity = int(summary.get("real_estate_equity_krw") or 0)
+    re_cost   = int(summary.get("real_estate_cost_krw") or 0)
+    invest_value  = int(summary.get("total_value_krw") or 0) - re_equity
+    invest_cost   = int(summary.get("total_cost_krw") or 0) - re_cost
+    invest_profit = invest_value - invest_cost
+    invest_profit_pct = (
+        round(invest_profit / invest_cost * 100, 2) if invest_cost > 0 else None
+    )
     with _conn() as c:
         c.execute(
             """
@@ -51,10 +59,10 @@ def record_snapshot_from_summary(summary: dict) -> None:
             """,
             (
                 today,
-                int(summary.get("total_value_krw") or 0),
-                int(summary.get("total_cost_krw") or 0),
-                int(summary.get("total_profit_krw") or 0),
-                summary.get("total_profit_pct"),
+                invest_value,
+                invest_cost,
+                invest_profit,
+                invest_profit_pct,
                 summary.get("usd_krw"),
                 datetime.now(KST).isoformat(),
             ),
