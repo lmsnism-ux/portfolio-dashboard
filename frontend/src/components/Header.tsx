@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell } from 'lucide-react';
+import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, type Exchange, type HoldingClass } from '../utils';
 import { fetchSparkline, getApiKey, setApiKey } from '../api';
@@ -11,6 +11,12 @@ import {
   getPermission,
   type NotifSettings,
 } from '../notifications';
+
+const TickerChartModal = lazy(() => import('./TickerChartModal'));
+
+// 시장 현황 종목 사용자 정의 순서/숨김 저장 키
+const MARKET_ORDER_KEY = 'pd_market_order';
+const MARKET_HIDDEN_KEY = 'pd_market_hidden';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
 
@@ -38,6 +44,7 @@ interface Props {
 
 interface TickerItem {
   name: string;
+  ticker: string | null;
   pct: number;
   krwChange: number | null;
   price: string | null;
@@ -49,13 +56,25 @@ interface TickerItem {
   fetchedAt: string | null;
 }
 
+// 한국장 내부 노출 순서: 국내 상장 해외 ETF → TDF·혼합 → 국내 ETF (사용자 요청: 국내 ETF 최하단)
 const CATEGORY_ORDER: Record<HoldingClass, number> = {
-  kr_domestic: 1,
-  kr_listed_overseas: 2,
-  mixed_tdf: 3,
+  kr_listed_overseas: 1,
+  mixed_tdf: 2,
+  kr_domestic: 3,
   us_direct: 4,
   cash: 5,
 };
+
+// 미국장 해외 직투 사용자 정의 순서 (TQQQ가 변동성 큰 종목이지만 사용자 요청에 따라 QLD 다음)
+// TQQQ를 먼저, QLD를 나중으로 (사용자 요청)
+const US_TICKER_PRIORITY: Record<string, number> = { TQQQ: 1, QLD: 2 };
+function usTickerOrder(name: string): number {
+  const upper = name.toUpperCase();
+  for (const [t, ord] of Object.entries(US_TICKER_PRIORITY)) {
+    if (upper === t || upper.startsWith(t + ' ') || upper.includes('(' + t + ')')) return ord;
+  }
+  return 99;
+}
 
 function Sparkline({ data, pct }: { data: number[]; pct: number }) {
   if (!data || data.length < 2) return null;
@@ -136,14 +155,81 @@ function MarketStatusCard({
   );
 }
 
-/** 보유 종목 카드 — 카테고리 라벨 포함 */
-function HoldingCard({ item }: { item: TickerItem }) {
+/** 보유 종목 카드 — 카테고리 라벨 + 등락률·등락금액 동시 표시 + 클릭/편집 컨트롤 */
+function HoldingCard({
+  item, hideAssets, editing, isHidden, isFirst, isLast,
+  onClick, onMoveUp, onMoveDown, onToggleHidden,
+}: {
+  item: TickerItem;
+  hideAssets: boolean;
+  editing?: boolean;
+  isHidden?: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
+  onClick?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onToggleHidden?: () => void;
+}) {
   const isPos = item.pct >= 0;
+  const sign = isPos ? '+' : '';
+
+  if (editing) {
+    return (
+      <div
+        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-opacity ${
+          isHidden ? 'opacity-40' : ''
+        } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
+            {etfDisplayName(item.name)}
+          </p>
+          <span
+            className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
+            style={{ background: item.accentColor }}
+          >
+            {item.shortLabel}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onToggleHidden}
+            aria-label={isHidden ? '표시' : '숨김'}
+            className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90"
+          >
+            {isHidden ? <Eye size={13} className="text-toss-text-secondary" /> : <Hide size={13} className="text-toss-text-tertiary" />}
+          </button>
+          <div className="flex flex-col gap-0">
+            <button
+              onClick={onMoveUp}
+              disabled={isFirst}
+              aria-label="위로"
+              className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
+            >
+              <ArrowUp size={12} className="text-toss-text-tertiary" />
+            </button>
+            <button
+              onClick={onMoveDown}
+              disabled={isLast}
+              aria-label="아래로"
+              className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
+            >
+              <ArrowDown size={12} className="text-toss-text-tertiary" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border ${
-        isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'
-      }`}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${
+        onClick ? 'hover:scale-[1.01] active:scale-[0.99] cursor-pointer' : 'cursor-default'
+      } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
     >
       <div className="min-w-0 flex-1">
         <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
@@ -158,15 +244,22 @@ function HoldingCard({ item }: { item: TickerItem }) {
           </span>
           {item.price && (
             <span className="text-[10px] text-toss-text-tertiary truncate">
-              {item.priceLabel === '실시간' ? '현재가' : '종가'} {item.price}
+              {item.price}
             </span>
           )}
         </div>
       </div>
-      <span className={`num text-[14px] font-extrabold shrink-0 pt-0.5 ${colorClass(item.pct)}`}>
-        {isPos ? '+' : ''}{item.pct.toFixed(2)}%
-      </span>
-    </div>
+      <div className="text-right shrink-0">
+        <p className={`num text-[14px] font-extrabold leading-tight ${colorClass(item.pct)}`}>
+          {sign}{item.pct.toFixed(2)}%
+        </p>
+        {item.krwChange !== null && !hideAssets && (
+          <p className={`num text-[10px] mt-0.5 ${colorClass(item.krwChange)}`}>
+            {sign}{fmtKRW(item.krwChange)}
+          </p>
+        )}
+      </div>
+    </button>
   );
 }
 
@@ -198,6 +291,52 @@ export default function Header({
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 종목 카드 클릭 → 차트 모달
+  const [chartTarget, setChartTarget] = useState<TickerItem | null>(null);
+
+  // 시장 현황 편집 모드 (순서 변경 + 숨김)
+  const [marketEditing, setMarketEditing] = useState(false);
+  const [customOrder, setCustomOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(MARKET_ORDER_KEY) || '[]'); } catch { return []; }
+  });
+  const [hiddenSet, setHiddenSet] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(MARKET_HIDDEN_KEY) || '[]')); } catch { return new Set(); }
+  });
+  const [draftOrder, setDraftOrder] = useState<string[]>([]);
+  const [draftHidden, setDraftHidden] = useState<Set<string>>(new Set());
+
+  const enterMarketEdit = () => {
+    setDraftOrder([...customOrder]);
+    setDraftHidden(new Set(hiddenSet));
+    setMarketEditing(true);
+  };
+  const cancelMarketEdit = () => setMarketEditing(false);
+  const saveMarketEdit = () => {
+    setCustomOrder([...draftOrder]);
+    setHiddenSet(new Set(draftHidden));
+    localStorage.setItem(MARKET_ORDER_KEY, JSON.stringify(draftOrder));
+    localStorage.setItem(MARKET_HIDDEN_KEY, JSON.stringify([...draftHidden]));
+    setMarketEditing(false);
+  };
+  const moveDraftItem = (name: string, dir: -1 | 1) => {
+    setDraftOrder(prev => {
+      const arr = [...prev];
+      const i = arr.indexOf(name);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= arr.length) return prev;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      return arr;
+    });
+  };
+  const toggleDraftHidden = (name: string) => {
+    setDraftHidden(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -263,6 +402,7 @@ export default function Header({
           if (!ex || Math.abs(pct) > Math.abs(ex.pct)) {
             seen.set(h.name, {
               name: h.name,
+              ticker: h.ticker,
               pct,
               krwChange: h.day_change_krw,
               price: h.current_price_display,
@@ -277,17 +417,45 @@ export default function Header({
         });
     });
     return [...seen.values()].sort((a, b) => {
-      // 거래소(KR 먼저) → 카테고리 → 변동률 절대값
+      // 거래소(KR 먼저) → 카테고리 → 미국 티커 우선순위 → 변동률 절대값
       if (a.exchange !== b.exchange) return a.exchange === 'KR' ? -1 : 1;
       const aOrd = CATEGORY_ORDER[a.category];
       const bOrd = CATEGORY_ORDER[b.category];
       if (aOrd !== bOrd) return aOrd - bOrd;
+      if (a.exchange === 'US') {
+        const ap = usTickerOrder(a.name);
+        const bp = usTickerOrder(b.name);
+        if (ap !== bp) return ap - bp;
+      }
       return Math.abs(b.pct) - Math.abs(a.pct);
     });
   })();
 
-  const krItems = tickerItems.filter(t => t.exchange === 'KR');
-  const usItems = tickerItems.filter(t => t.exchange === 'US');
+  // 사용자 정의 순서 / 숨김 적용
+  // 편집 모드에선 draft 사용, 아니면 저장된 값 사용
+  const activeOrder  = marketEditing ? draftOrder  : customOrder;
+  const activeHidden = marketEditing ? draftHidden : hiddenSet;
+
+  const orderedItems = useMemo(() => {
+    if (activeOrder.length === 0) return tickerItems;
+    const map = new Map(tickerItems.map(t => [t.name, t]));
+    const sorted: TickerItem[] = [];
+    activeOrder.forEach(name => {
+      const t = map.get(name);
+      if (t) { sorted.push(t); map.delete(name); }
+    });
+    // 저장된 순서에 없는 새 종목은 끝에 추가
+    map.forEach(t => sorted.push(t));
+    return sorted;
+  }, [tickerItems, activeOrder]);
+
+  // 편집 모드가 아니면 숨김 항목 제외, 편집 모드면 다 보여주되 흐리게
+  const visibleItems = marketEditing
+    ? orderedItems
+    : orderedItems.filter(t => !activeHidden.has(t.name));
+
+  const krItems = visibleItems.filter(t => t.exchange === 'KR');
+  const usItems = visibleItems.filter(t => t.exchange === 'US');
 
   // 한국장 카테고리별 그룹
   const krByCategory: Array<{ category: HoldingClass; label: string; items: TickerItem[] }> = (() => {
@@ -511,6 +679,30 @@ export default function Header({
               </button>
             </div>
 
+            {/* 편집 토글 + 안내 (시장 펼침 상태일 때만) */}
+            {marketOpen && (
+              <div className="flex items-center justify-between px-1">
+                <p className="text-[11px] text-toss-text-tertiary">
+                  {marketEditing
+                    ? '종목을 위/아래로 옮기거나 숨길 수 있어요.'
+                    : '종목을 누르면 최근 주가 그래프가 열려요.'}
+                </p>
+                {!marketEditing ? (
+                  <button
+                    onClick={enterMarketEdit}
+                    className="text-[11px] font-medium text-toss-text-secondary px-2.5 py-1 rounded-full border border-toss-border hover:border-toss-blue/50 flex items-center gap-1 active:scale-95"
+                  >
+                    <Pencil size={10} /> 편집
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={cancelMarketEdit} className="text-[11px] text-toss-text-tertiary px-2.5 py-1 rounded-full border border-toss-border active:scale-95">취소</button>
+                    <button onClick={saveMarketEdit} className="text-[11px] font-semibold text-white bg-toss-blue px-3 py-1 rounded-full active:scale-95">저장</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 보유 종목 — 시장별 + 카테고리별 그룹 */}
             {marketOpen && (
               <div className="space-y-3">
@@ -537,7 +729,19 @@ export default function Header({
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                             {group.items.map((item, i) => (
-                              <HoldingCard key={i} item={item} />
+                              <HoldingCard
+                                key={item.name}
+                                item={item}
+                                hideAssets={hideAssets}
+                                editing={marketEditing}
+                                isHidden={activeHidden.has(item.name)}
+                                isFirst={i === 0}
+                                isLast={i === group.items.length - 1}
+                                onClick={item.ticker ? () => setChartTarget(item) : undefined}
+                                onToggleHidden={() => toggleDraftHidden(item.name)}
+                                onMoveUp={() => moveDraftItem(item.name, -1)}
+                                onMoveDown={() => moveDraftItem(item.name, 1)}
+                              />
                             ))}
                           </div>
                         </div>
@@ -565,7 +769,19 @@ export default function Header({
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                         {usItems.map((item, i) => (
-                          <HoldingCard key={i} item={item} />
+                          <HoldingCard
+                            key={item.name}
+                            item={item}
+                            hideAssets={hideAssets}
+                            editing={marketEditing}
+                            isHidden={activeHidden.has(item.name)}
+                            isFirst={i === 0}
+                            isLast={i === usItems.length - 1}
+                            onClick={item.ticker ? () => setChartTarget(item) : undefined}
+                            onToggleHidden={() => toggleDraftHidden(item.name)}
+                            onMoveUp={() => moveDraftItem(item.name, -1)}
+                            onMoveDown={() => moveDraftItem(item.name, 1)}
+                          />
                         ))}
                       </div>
                     </div>
@@ -581,6 +797,19 @@ export default function Header({
       {apiKeyOpen && <ApiKeyModal onClose={() => setApiKeyOpen(false)} />}
       {/* 알림 설정 모달 */}
       {notifOpen && <NotifModal onClose={() => setNotifOpen(false)} />}
+      {/* 종목 주가 차트 모달 */}
+      {chartTarget && chartTarget.ticker && (
+        <Suspense fallback={null}>
+          <TickerChartModal
+            ticker={chartTarget.ticker}
+            name={chartTarget.name}
+            shortLabel={chartTarget.shortLabel}
+            accentColor={chartTarget.accentColor}
+            currentDisplay={chartTarget.price}
+            onClose={() => setChartTarget(null)}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

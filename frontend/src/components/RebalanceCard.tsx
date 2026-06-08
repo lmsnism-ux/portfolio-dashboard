@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sliders, Check, X } from 'lucide-react';
+import { Sliders, Check, X, Sparkles } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { fmtKRW } from '../utils';
 
@@ -10,6 +10,38 @@ interface Props {
   hideAssets: boolean;
 }
 
+/** 자산군 추천 프리셋 — 종류별 비중을 분류해 자동 매핑 */
+const PRESETS: Array<{
+  key: 'conservative' | 'balanced' | 'aggressive';
+  label: string;
+  description: string;
+  color: string;
+  /** 자산군 카테고리별 권장 비중 (%) */
+  mix: { 주식: number; '혼합(TDF)': number; 채권: number; 현금: number; 예금: number };
+}> = [
+  {
+    key: 'conservative',
+    label: '보수형',
+    description: '안정 중심 · 예금/채권 비중',
+    color: '#10B981',
+    mix: { 주식: 30, '혼합(TDF)': 20, 채권: 25, 현금: 5, 예금: 20 },
+  },
+  {
+    key: 'balanced',
+    label: '균형형',
+    description: '주식·안전 균형',
+    color: '#3182F6',
+    mix: { 주식: 55, '혼합(TDF)': 15, 채권: 15, 현금: 5, 예금: 10 },
+  },
+  {
+    key: 'aggressive',
+    label: '공격형',
+    description: '성장 중심 · 주식 고비중',
+    color: '#F04452',
+    mix: { 주식: 80, '혼합(TDF)': 10, 채권: 5, 현금: 0, 예금: 5 },
+  },
+];
+
 function loadTargets(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem(REBALANCE_KEY) || '{}'); } catch { return {}; }
 }
@@ -18,6 +50,7 @@ export default function RebalanceCard({ data, hideAssets }: Props) {
   const [editing, setEditing] = useState(false);
   const [targets, setTargets] = useState<Record<string, number>>(loadTargets);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
 
   const classes = data.asset_class_weights;
   const totalKrw = classes.reduce((s, c) => s + c.value_krw, 0);
@@ -31,7 +64,28 @@ export default function RebalanceCard({ data, hideAssets }: Props) {
     const d: Record<string, string> = {};
     classes.forEach(c => { d[c.name] = (targets[c.name] ?? 0) > 0 ? String(targets[c.name]) : ''; });
     setDraft(d);
+    setSelectedPreset(null);
     setEditing(true);
+  };
+
+  const applyPreset = (presetKey: typeof PRESETS[number]['key']) => {
+    const preset = PRESETS.find(p => p.key === presetKey);
+    if (!preset) return;
+    const d: Record<string, string> = {};
+    classes.forEach(c => {
+      // 현재 보유 자산군 이름과 프리셋 키 매칭 (혼합/TDF는 ' 혼합(TDF)' 키 사용)
+      let pct: number | undefined;
+      const name = c.name;
+      if (name in preset.mix) pct = (preset.mix as Record<string, number>)[name];
+      else if (/혼합|TDF/i.test(name)) pct = preset.mix['혼합(TDF)'];
+      else if (/주식/.test(name))     pct = preset.mix['주식'];
+      else if (/채권/.test(name))     pct = preset.mix['채권'];
+      else if (/예금|적금/.test(name)) pct = preset.mix['예금'];
+      else if (/현금/.test(name))     pct = preset.mix['현금'];
+      d[name] = pct && pct > 0 ? String(pct) : '';
+    });
+    setDraft(d);
+    setSelectedPreset(presetKey);
   };
 
   const saveEdit = () => {
@@ -78,6 +132,49 @@ export default function RebalanceCard({ data, hideAssets }: Props) {
         </p>
       ) : (
         <>
+          {/* 편집 모드: 추천 프리셋 */}
+          {editing && (
+            <div className="mb-3 bg-toss-blue-soft/40 rounded-2xl p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Sparkles size={13} className="text-toss-blue" />
+                <span className="text-[11px] font-semibold text-toss-text-secondary">추천 비중 (한 번 클릭으로 자동 채우기)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {PRESETS.map(p => (
+                  <button
+                    key={p.key}
+                    onClick={() => applyPreset(p.key)}
+                    className={`text-left p-2.5 rounded-xl transition-all active:scale-95 border-2 ${
+                      selectedPreset === p.key
+                        ? 'border-toss-blue bg-toss-card'
+                        : 'border-toss-border/40 bg-toss-card hover:border-toss-blue/30'
+                    }`}
+                    style={selectedPreset === p.key ? { borderColor: p.color } : undefined}
+                  >
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: p.color }} />
+                      <span className="text-[11px] font-bold" style={{ color: p.color }}>{p.label}</span>
+                    </div>
+                    <p className="text-[9px] text-toss-text-tertiary leading-tight">{p.description}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-0.5">
+                      {Object.entries(p.mix).filter(([, v]) => v > 0).map(([k, v]) => (
+                        <span
+                          key={k}
+                          className="text-[8px] font-medium px-1 py-0.5 rounded bg-toss-bg text-toss-text-secondary"
+                        >
+                          {k.replace('혼합(TDF)', 'TDF')} {v}%
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-toss-text-tertiary mt-2 leading-relaxed">
+                ⓘ 보유 자산군 이름에 따라 자동 매칭됩니다. 아래에서 미세 조정할 수 있어요.
+              </p>
+            </div>
+          )}
+
           {/* 컬럼 헤더 */}
           <div
             className="grid gap-2 mb-2 text-[10px] text-toss-text-tertiary font-medium"

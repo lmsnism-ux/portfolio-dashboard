@@ -65,7 +65,7 @@ export default function IrpMonitor({ info, hideAssets = false }: Props) {
       </div>
 
       {/* 금액 정보 */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div className="grid grid-cols-3 gap-2 text-xs">
         <div>
           <p className="text-toss-text-tertiary">ETF 평가금액</p>
           <p className="num font-semibold text-toss-text-primary">
@@ -82,12 +82,6 @@ export default function IrpMonitor({ info, hideAssets = false }: Props) {
           <p className="text-toss-text-tertiary">추가 매수 가능 금액</p>
           <p className={`num font-semibold ${info.available_krw > 0 ? 'text-toss-success' : 'text-toss-danger'}`}>
             {hideAssets ? '••••' : fmtKRW(info.available_krw)}
-          </p>
-        </div>
-        <div>
-          <p className="text-toss-text-tertiary">예시: SOL 반도체</p>
-          <p className="num font-semibold text-toss-text-primary">
-            {info.sol_available_shares > 0 ? `약 ${info.sol_available_shares}주` : '추가 불가'}
           </p>
         </div>
       </div>

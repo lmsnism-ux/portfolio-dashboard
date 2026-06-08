@@ -462,6 +462,60 @@ async def get_sparkline():
     return data
 
 
+# 종목별 가격 히스토리 캐시 (티커 → {ts, items})
+_ticker_hist_cache: dict[str, dict] = {}
+_TICKER_HIST_TTL = 1800  # 30분
+
+@app.get("/api/market/history/{ticker}")
+async def get_ticker_history(ticker: str, range: str = "1mo"):
+    """단일 종목의 일봉 히스토리. 종목 카드 클릭 시 미니 차트용.
+
+    range: 1mo, 3mo, 6mo, 1y, 5y
+    """
+    cache_key = f"{ticker}:{range}"
+    now_ts = time.time()
+    cached = _ticker_hist_cache.get(cache_key)
+    if cached and (now_ts - cached["ts"]) < _TICKER_HIST_TTL:
+        return cached["data"]
+
+    def _fetch():
+        import yfinance as yf
+        # 한국 ETF는 .KS/.KQ 접미사 시도
+        is_korean = len(ticker) == 6 and any(c.isdigit() for c in ticker)
+        symbols = [f"{ticker}.KS", f"{ticker}.KQ"] if is_korean else [ticker]
+        for symbol in symbols:
+            try:
+                hist = yf.Ticker(symbol).history(period=range)
+                if hist.empty:
+                    continue
+                items = [
+                    {
+                        "date": str(idx.date()),
+                        "close": round(float(close), 4),
+                        "volume": int(vol) if vol == vol else 0,  # NaN check
+                    }
+                    for idx, close, vol in zip(hist.index, hist["Close"], hist["Volume"])
+                    if close == close  # NaN 필터
+                ]
+                if not items:
+                    continue
+                return {
+                    "ticker": ticker,
+                    "symbol": symbol,
+                    "range": range,
+                    "currency": "KRW" if is_korean else "USD",
+                    "items": items,
+                }
+            except Exception as e:
+                logger.warning(f"ticker history fetch failed ({symbol}): {e}")
+                continue
+        return {"ticker": ticker, "items": []}
+
+    data = await asyncio.to_thread(_fetch)
+    _ticker_hist_cache[cache_key] = {"ts": now_ts, "data": data}
+    return data
+
+
 @app.get("/api/prices")
 async def get_prices():
     """캐시된 가격 데이터 반환"""

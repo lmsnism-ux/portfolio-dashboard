@@ -172,6 +172,26 @@ export async function fetchSparkline(): Promise<Record<string, number[]>> {
   }
 }
 
+export interface TickerHistoryPoint {
+  date: string;
+  close: number;
+  volume: number;
+}
+
+export interface TickerHistory {
+  ticker: string;
+  symbol?: string;
+  range: string;
+  currency: string;
+  items: TickerHistoryPoint[];
+}
+
+export async function fetchTickerHistory(ticker: string, range = '1mo'): Promise<TickerHistory> {
+  const res = await fetch(`${BASE}/market/history/${encodeURIComponent(ticker)}?range=${range}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 // ─── 체결(매수/매도) 내역 ───
 export interface TradeCreate {
   account_name: string;

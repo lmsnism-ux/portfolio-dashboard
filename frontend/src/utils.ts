@@ -192,53 +192,67 @@ export interface MarketStatus {
 }
 
 /**
+ * KST 기준 [요일, 분(0~1439)] 반환.
+ * 사용자 로컬 timezone과 무관하게 동작 (예전 코드는 한국 외 timezone에서 오작동).
+ */
+function _kstNow(now: Date): { dow: number; minutes: number; hh: number; mm: number } {
+  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
+  const kst = new Date(kstMs);
+  return {
+    dow: kst.getUTCDay(),
+    hh: kst.getUTCHours(),
+    mm: kst.getUTCMinutes(),
+    minutes: kst.getUTCHours() * 60 + kst.getUTCMinutes(),
+  };
+}
+
+/**
  * 한국장: 평일 09:00~15:30 KST
- * 미국장: 평일 09:30~16:00 ET (서머타임이면 KST 22:30~05:00, 동절기 23:30~06:00)
- *   — 단순화를 위해 KST 22:30~06:00 을 'open' 으로 본다 (날짜 경계 처리).
+ * 미국장: KST 22:30~익일 05:00 (서머타임 / 동절기 단순화)
+ *   - 한국 토요일(dow=6): 금요일 미장 마감(=토요일 05:00 KST) 후 → 휴장
+ *   - 한국 일요일(dow=0): 종일 미장 휴장
+ *   - 한국 월요일 0~05시(dow=1): 일요일 새벽 → 미장 휴장
  */
 export function getMarketStatus(exchange: Exchange, now: Date = new Date()): MarketStatus {
-  // KST = UTC+9. 브라우저 로컬 시간을 KST로 변환
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
-  const kst = new Date(utcMs + 9 * 60 * 60 * 1000);
-  const dow = kst.getUTCDay(); // 0=Sun, 6=Sat
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  const { dow, minutes } = _kstNow(now);
 
   if (exchange === 'KR') {
     const open = 9 * 60;        // 09:00
     const close = 15 * 60 + 30; // 15:30
     if (dow === 0 || dow === 6) {
-      return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 09:00 ~ 15:30 (KST)' };
+      return { exchange, state: 'closed', label: '주말 휴장', timeLabel: '평일 09:00 ~ 15:30 (KST)' };
     }
-    if (minutes < open) return { exchange, state: 'pre', label: '장 시작 전', timeLabel: `09:00 개장 (KST)` };
-    if (minutes > close) return { exchange, state: 'post', label: '장 마감', timeLabel: `15:30 마감 (KST)` };
+    if (minutes < open)  return { exchange, state: 'pre',  label: '장 시작 전', timeLabel: '09:00 개장 (KST)' };
+    if (minutes > close) return { exchange, state: 'post', label: '장 마감',    timeLabel: '15:30 마감 (KST)' };
     return { exchange, state: 'open', label: '진행중', timeLabel: '15:30 마감 (KST)' };
   }
 
-  // 미국장 (단순화: KST 22:30~05:00 익일을 'open' 으로 간주)
-  // dow 기준: 미장 정규장은 한국시간 화~토 새벽까지 (월요일 미장은 화요일 새벽)
-  const openMin  = 22 * 60 + 30;        // 22:30
-  const closeMin = 5 * 60;              // 05:00 (익일)
+  // 미국장
+  const openMin  = 22 * 60 + 30;  // 22:30
+  const closeMin = 5 * 60;        // 05:00 (익일)
 
-  const isWeekendKST = (dow === 0 || dow === 6);
-  // 일요일 새벽 또는 토요일 저녁은 미장 휴장
-  if (isWeekendKST) {
-    if (dow === 6 && minutes < closeMin) {
-      // 토요일 새벽은 금요일 미장 마감 이후 시점 → closed
-      return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
-    }
-    return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+  // 한국 일요일 종일: 미장 휴장
+  if (dow === 0) {
+    return { exchange, state: 'closed', label: '주말 휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
   }
-  // 월요일 0시~05시: 일요일 새벽 = 미장 휴장
+  // 한국 토요일: 05시 이전이면 금요일 미장의 연장으로 보고 closed 표시 (이미 마감)
+  // 05시 이후도 모두 휴장
+  if (dow === 6) {
+    return { exchange, state: 'closed', label: '주말 휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+  }
+  // 한국 월요일 0~05시: 일요일 새벽 → 미장 없음
   if (dow === 1 && minutes < closeMin) {
-    return { exchange, state: 'closed', label: '휴장', timeLabel: '평일 22:30 ~ 익일 05:00 (KST)' };
+    return { exchange, state: 'closed', label: '주말 휴장', timeLabel: '오늘 22:30 개장 (KST)' };
   }
 
-  if (minutes >= openMin || minutes < closeMin) {
+  // 평일 (화~금) 새벽 0~05시: 전일 미장 진행 중
+  if (minutes < closeMin) {
+    return { exchange, state: 'open', label: '진행중', timeLabel: '오늘 05:00 마감 (KST)' };
+  }
+  // 평일 (월~금) 22:30 이후: 오늘 미장 시작
+  if (minutes >= openMin) {
     return { exchange, state: 'open', label: '진행중', timeLabel: '익일 05:00 마감 (KST)' };
   }
-  if (minutes < openMin && minutes >= closeMin + 60) {
-    // 일 중 휴식 시간 (05:00~22:30)
-    return { exchange, state: 'post', label: '장 마감', timeLabel: '오늘 22:30 개장 (KST)' };
-  }
-  return { exchange, state: 'pre', label: '장 시작 전', timeLabel: '22:30 개장 (KST)' };
+  // 평일 낮 (05:00 ~ 22:30): 장 마감
+  return { exchange, state: 'post', label: '장 마감', timeLabel: '오늘 22:30 개장 (KST)' };
 }
