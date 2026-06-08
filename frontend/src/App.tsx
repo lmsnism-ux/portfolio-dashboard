@@ -176,11 +176,12 @@ export default function App() {
           const dcKrw = dcOn ? 0 : data.accounts
             .filter(a => /DC|퇴직/i.test(a.type))
             .reduce((s, a) => s + a.value_krw, 0);
-          const reExcluded = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
+          // 목표 자산은 순수 금융자산 기준 — 부동산 순자산 항상 제외
+          const reEquity = data.real_estate_equity_krw ?? 0;
           return (
             <GoalCard
               goalKrw={data.goal_krw}
-              currentKrw={data.total_value_krw - reExcluded - dcKrw}
+              currentKrw={data.total_value_krw - reEquity - dcKrw}
               progressPct={data.goal_progress_pct}
               hideAssets={hideAssets}
               longTermKrw={longTermKrw}
