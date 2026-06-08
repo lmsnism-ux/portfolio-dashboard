@@ -408,3 +408,29 @@ async def force_refresh():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+@app.get("/api/debug/portfolio-file")
+async def debug_portfolio_file():
+    """디버그: portfolio.json 파일 현재 상태 확인"""
+    import os, base64
+    result = {
+        "file_path": str(PORTFOLIO_FILE),
+        "file_exists": PORTFOLIO_FILE.exists(),
+        "env_var_set": bool(os.environ.get("PORTFOLIO_JSON_B64")),
+    }
+    if PORTFOLIO_FILE.exists():
+        raw = PORTFOLIO_FILE.read_text()
+        try:
+            parsed = json.loads(raw)
+            result["file_has_real_estate"] = "real_estate" in parsed
+            result["file_accounts_count"] = len(parsed.get("accounts", []))
+        except Exception as e:
+            result["file_parse_error"] = str(e)
+    if os.environ.get("PORTFOLIO_JSON_B64"):
+        try:
+            raw_env = base64.b64decode(os.environ["PORTFOLIO_JSON_B64"]).decode("utf-8")
+            parsed_env = json.loads(raw_env)
+            result["env_has_real_estate"] = "real_estate" in parsed_env
+        except Exception as e:
+            result["env_parse_error"] = str(e)
+    return result
