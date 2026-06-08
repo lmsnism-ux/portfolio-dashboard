@@ -144,6 +144,11 @@ export default function App() {
         onRefresh={() => refreshMutation.mutate()}
         onToggleDc={handleDcToggle}
         isRefreshing={refreshMutation.isPending}
+        onAddHolding={() => {
+          // 시장 현황 편집 모드에서 + 누름 → 첫 번째 비-스냅샷 계좌를 기본으로 추가 모달
+          const target = data.accounts.find(a => a.holdings.some(h => !h.is_snapshot)) ?? data.accounts[0];
+          if (target) setAdding(target);
+        }}
       />
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-4">

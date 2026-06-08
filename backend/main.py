@@ -436,6 +436,56 @@ async def update_goal(update: GoalUpdate):
 
 _sparkline_cache: dict = {}
 _sparkline_ts: float = 0.0
+_indices_cache: dict = {}
+_indices_ts: float = 0.0
+
+
+def _fetch_yahoo_chart(symbol: str, range: str = "30d", interval: str = "1d") -> dict | None:
+    """Yahoo Finance HTTP API 호출 (yfinance 의존 없이).
+
+    응답에 closes(list), last, prev, change_pct 등을 반환.
+    """
+    import requests
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval={interval}"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        data = r.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        node = result[0]
+        timestamps = node.get("timestamp", []) or []
+        closes_raw = node["indicators"]["quote"][0].get("close", []) or []
+        meta = node.get("meta", {}) or {}
+        items = []
+        for ts, close in zip(timestamps, closes_raw):
+            if close is None:
+                continue
+            from datetime import datetime as _dt
+            items.append({
+                "date": _dt.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                "close": round(float(close), 4),
+            })
+        if not items:
+            return None
+        last = items[-1]["close"]
+        prev = items[-2]["close"] if len(items) >= 2 else (meta.get("chartPreviousClose") or meta.get("previousClose"))
+        change = (last - prev) if prev else None
+        change_pct = (change / prev * 100) if (prev and change is not None) else None
+        return {
+            "symbol": symbol,
+            "items": items,
+            "last": last,
+            "prev": prev,
+            "change": change,
+            "change_pct": change_pct,
+            "currency": meta.get("currency"),
+            "exchange": meta.get("exchangeName"),
+        }
+    except Exception as e:
+        logger.warning(f"yahoo chart fetch 실패 ({symbol}): {e}")
+        return None
+
 
 @app.get("/api/market/sparkline")
 async def get_sparkline():
@@ -445,15 +495,10 @@ async def get_sparkline():
         return _sparkline_cache
 
     def _fetch():
-        import yfinance as yf
         result = {}
-        for key, ticker in [("nasdaq", "^IXIC"), ("sp500", "^GSPC"), ("korea", "^KS11")]:
-            try:
-                hist = yf.Ticker(ticker).history(period="30d")
-                result[key] = [round(float(v), 2) for v in hist["Close"].tolist()[-20:]]
-            except Exception as e:
-                logger.warning(f"sparkline fetch 실패 ({ticker}): {e}")
-                result[key] = []
+        for key, sym in [("nasdaq", "^IXIC"), ("sp500", "^GSPC"), ("korea", "^KS11")]:
+            chart = _fetch_yahoo_chart(sym, range="30d", interval="1d")
+            result[key] = [it["close"] for it in (chart or {}).get("items", [])[-20:]]
         return result
 
     data = await asyncio.to_thread(_fetch)
@@ -462,53 +507,87 @@ async def get_sparkline():
     return data
 
 
+@app.get("/api/market/indices")
+async def get_indices():
+    """주요 지수 현재가 + 전일 대비 변동. 5분 캐시."""
+    global _indices_cache, _indices_ts
+    if _indices_cache and time.time() - _indices_ts < 300:
+        return _indices_cache
+
+    def _fetch():
+        result = {}
+        for key, sym, label in [
+            ("nasdaq", "^IXIC", "나스닥"),
+            ("sp500",  "^GSPC", "S&P 500"),
+            ("korea",  "^KS11", "코스피"),
+        ]:
+            chart = _fetch_yahoo_chart(sym, range="5d", interval="1d")
+            if chart and chart.get("last") is not None:
+                result[key] = {
+                    "label": label,
+                    "symbol": sym,
+                    "value": round(chart["last"], 2),
+                    "prev": round(chart["prev"], 2) if chart.get("prev") else None,
+                    "change": round(chart["change"], 2) if chart.get("change") is not None else None,
+                    "change_pct": round(chart["change_pct"], 2) if chart.get("change_pct") is not None else None,
+                }
+            else:
+                result[key] = {"label": label, "symbol": sym, "value": None, "change": None, "change_pct": None}
+        return result
+
+    data = await asyncio.to_thread(_fetch)
+    _indices_cache = data
+    _indices_ts = time.time()
+    return data
+
+
 # 종목별 가격 히스토리 캐시 (티커 → {ts, items})
 _ticker_hist_cache: dict[str, dict] = {}
 _TICKER_HIST_TTL = 1800  # 30분
+
+# range 별 추가 기간(yahoo가 가끔 짧게 잘리는 경우 보정)
+_RANGE_MAP = {
+    "1mo": "1mo",
+    "3mo": "3mo",
+    "6mo": "6mo",
+    "1y": "1y",
+    "5y": "5y",
+}
+
 
 @app.get("/api/market/history/{ticker}")
 async def get_ticker_history(ticker: str, range: str = "1mo"):
     """단일 종목의 일봉 히스토리. 종목 카드 클릭 시 미니 차트용.
 
     range: 1mo, 3mo, 6mo, 1y, 5y
+    yfinance에 의존하지 않고 yahoo HTTP API를 직접 호출 (Render 안정성).
     """
-    cache_key = f"{ticker}:{range}"
+    range_val = _RANGE_MAP.get(range, "1mo")
+    cache_key = f"{ticker}:{range_val}"
     now_ts = time.time()
     cached = _ticker_hist_cache.get(cache_key)
     if cached and (now_ts - cached["ts"]) < _TICKER_HIST_TTL:
         return cached["data"]
 
     def _fetch():
-        import yfinance as yf
-        # 한국 ETF는 .KS/.KQ 접미사 시도
+        # 한국 ETF: 6자리 코드 → .KS/.KQ 시도. 사용자 입력에 그대로 6자리(영문 포함) 가능.
         is_korean = len(ticker) == 6 and any(c.isdigit() for c in ticker)
         symbols = [f"{ticker}.KS", f"{ticker}.KQ"] if is_korean else [ticker]
         for symbol in symbols:
-            try:
-                hist = yf.Ticker(symbol).history(period=range)
-                if hist.empty:
-                    continue
-                items = [
-                    {
-                        "date": str(idx.date()),
-                        "close": round(float(close), 4),
-                        "volume": int(vol) if vol == vol else 0,  # NaN check
-                    }
-                    for idx, close, vol in zip(hist.index, hist["Close"], hist["Volume"])
-                    if close == close  # NaN 필터
-                ]
-                if not items:
-                    continue
-                return {
-                    "ticker": ticker,
-                    "symbol": symbol,
-                    "range": range,
-                    "currency": "KRW" if is_korean else "USD",
-                    "items": items,
-                }
-            except Exception as e:
-                logger.warning(f"ticker history fetch failed ({symbol}): {e}")
+            chart = _fetch_yahoo_chart(symbol, range=range_val, interval="1d")
+            if not chart or not chart.get("items"):
                 continue
+            return {
+                "ticker": ticker,
+                "symbol": symbol,
+                "range": range_val,
+                "currency": chart.get("currency") or ("KRW" if is_korean else "USD"),
+                "items": chart["items"],
+                "last": chart.get("last"),
+                "prev": chart.get("prev"),
+                "change": chart.get("change"),
+                "change_pct": chart.get("change_pct"),
+            }
         return {"ticker": ticker, "items": []}
 
     data = await asyncio.to_thread(_fetch)

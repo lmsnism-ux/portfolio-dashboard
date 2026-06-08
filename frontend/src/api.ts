@@ -162,6 +162,25 @@ export async function deleteAccount(name: string): Promise<void> {
   }
 }
 
+export interface MarketIndex {
+  label: string;
+  symbol: string;
+  value: number | null;
+  prev: number | null;
+  change: number | null;
+  change_pct: number | null;
+}
+
+export async function fetchMarketIndices(): Promise<Record<string, MarketIndex>> {
+  try {
+    const res = await fetch(`${BASE}/market/indices`);
+    if (!res.ok) return {};
+    return res.json();
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchSparkline(): Promise<Record<string, number[]>> {
   try {
     const res = await fetch(`${BASE}/market/sparkline`);

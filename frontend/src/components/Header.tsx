@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide, Trash2, Plus } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, type Exchange, type HoldingClass } from '../utils';
-import { fetchSparkline, getApiKey, setApiKey } from '../api';
+import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding } from '../api';
 import {
   loadSettings as loadNotifSettings,
   saveSettings as saveNotifSettings,
@@ -40,6 +40,8 @@ interface Props {
   onRefresh: () => void;
   onToggleDc: () => void;
   isRefreshing: boolean;
+  /** 편집 모드에서 + 누를 때 어느 계좌로 추가할지 선택 모달을 띄움 */
+  onAddHolding?: () => void;
 }
 
 interface TickerItem {
@@ -65,9 +67,8 @@ const CATEGORY_ORDER: Record<HoldingClass, number> = {
   cash: 5,
 };
 
-// 미국장 해외 직투 사용자 정의 순서 (TQQQ가 변동성 큰 종목이지만 사용자 요청에 따라 QLD 다음)
-// TQQQ를 먼저, QLD를 나중으로 (사용자 요청)
-const US_TICKER_PRIORITY: Record<string, number> = { TQQQ: 1, QLD: 2 };
+// 미국장 해외 직투 사용자 정의 순서: QLD → TQQQ
+const US_TICKER_PRIORITY: Record<string, number> = { QLD: 1, TQQQ: 2 };
 function usTickerOrder(name: string): number {
   const upper = name.toUpperCase();
   for (const [t, ord] of Object.entries(US_TICKER_PRIORITY)) {
@@ -105,12 +106,16 @@ function Sparkline({ data, pct }: { data: number[]; pct: number }) {
 function MarketStatusCard({
   exchange,
   indexLabel,
-  indexPct,
+  indexValue,
+  indexChange,
+  indexChangePct,
   sparkData,
 }: {
   exchange: Exchange;
   indexLabel: string;
-  indexPct: number | null;
+  indexValue: number | null;        // 실제 지수 포인트 (예: 2,650.45)
+  indexChange: number | null;       // 전일 대비 변동 포인트 (예: +12.3)
+  indexChangePct: number | null;    // 전일 대비 변동률 (%)
   sparkData?: number[];
 }) {
   const status = getMarketStatus(exchange);
@@ -125,6 +130,10 @@ function MarketStatusCard({
     closed: { dot: 'bg-toss-text-tertiary/40', dotAnim: '',    text: 'text-toss-text-tertiary' },
   }[status.state];
 
+  const hasIndex = indexValue !== null;
+  const sign = indexChange !== null && indexChange >= 0 ? '+' : '';
+  const fmtIndex = (v: number) => v.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="flex-1 min-w-[180px] bg-toss-card border border-toss-border rounded-2xl px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
@@ -136,18 +145,25 @@ function MarketStatusCard({
         </div>
       </div>
       <div className="flex items-end justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-[11px] text-toss-text-tertiary">{indexLabel}</p>
-          {indexPct !== null ? (
-            <p className={`num text-[18px] font-extrabold leading-tight ${colorClass(indexPct)}`}>
-              {indexPct >= 0 ? '+' : ''}{indexPct.toFixed(2)}%
-            </p>
+          {hasIndex ? (
+            <>
+              <p className="num text-[20px] font-extrabold leading-tight text-toss-text-primary">
+                {fmtIndex(indexValue!)}
+              </p>
+              {indexChange !== null && indexChangePct !== null && (
+                <p className={`num text-[11px] font-bold mt-0.5 ${colorClass(indexChange)}`}>
+                  {sign}{fmtIndex(indexChange)} ({sign}{indexChangePct.toFixed(2)}%)
+                </p>
+              )}
+            </>
           ) : (
             <p className="num text-[16px] font-bold text-toss-text-tertiary">-</p>
           )}
         </div>
-        {sparkData && sparkData.length >= 2 && indexPct !== null && (
-          <Sparkline data={sparkData} pct={indexPct} />
+        {sparkData && sparkData.length >= 2 && indexChange !== null && (
+          <Sparkline data={sparkData} pct={indexChange} />
         )}
       </div>
       <p className="text-[10px] text-toss-text-tertiary mt-1.5">{status.timeLabel}</p>
@@ -157,8 +173,8 @@ function MarketStatusCard({
 
 /** 보유 종목 카드 — 카테고리 라벨 + 등락률·등락금액 동시 표시 + 클릭/편집 컨트롤 */
 function HoldingCard({
-  item, hideAssets, editing, isHidden, isFirst, isLast,
-  onClick, onMoveUp, onMoveDown, onToggleHidden,
+  item, hideAssets, editing, isHidden, isFirst, isLast, pendingDelete,
+  onClick, onMoveUp, onMoveDown, onToggleHidden, onAskDelete, onConfirmDelete, onCancelDelete,
 }: {
   item: TickerItem;
   hideAssets: boolean;
@@ -166,10 +182,14 @@ function HoldingCard({
   isHidden?: boolean;
   isFirst?: boolean;
   isLast?: boolean;
+  pendingDelete?: boolean;
   onClick?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onToggleHidden?: () => void;
+  onAskDelete?: () => void;
+  onConfirmDelete?: () => void;
+  onCancelDelete?: () => void;
 }) {
   const isPos = item.pct >= 0;
   const sign = isPos ? '+' : '';
@@ -179,46 +199,70 @@ function HoldingCard({
       <div
         className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-opacity ${
           isHidden ? 'opacity-40' : ''
-        } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
+        } ${pendingDelete ? 'bg-toss-down-soft border-toss-down/40' : isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
       >
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
             {etfDisplayName(item.name)}
           </p>
-          <span
-            className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
-            style={{ background: item.accentColor }}
-          >
-            {item.shortLabel}
-          </span>
+          {pendingDelete ? (
+            <p className="text-[10px] text-toss-down font-semibold mt-0.5">정말 삭제할까요? 보유 기록도 사라져요</p>
+          ) : (
+            <span
+              className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
+              style={{ background: item.accentColor }}
+            >
+              {item.shortLabel}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={onToggleHidden}
-            aria-label={isHidden ? '표시' : '숨김'}
-            className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90"
-          >
-            {isHidden ? <Eye size={13} className="text-toss-text-secondary" /> : <Hide size={13} className="text-toss-text-tertiary" />}
-          </button>
-          <div className="flex flex-col gap-0">
+        {pendingDelete ? (
+          <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={onMoveUp}
-              disabled={isFirst}
-              aria-label="위로"
-              className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
-            >
-              <ArrowUp size={12} className="text-toss-text-tertiary" />
-            </button>
+              onClick={onConfirmDelete}
+              className="text-[11px] font-semibold text-white bg-toss-down px-2.5 py-1 rounded-full active:scale-95"
+            >삭제</button>
             <button
-              onClick={onMoveDown}
-              disabled={isLast}
-              aria-label="아래로"
-              className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
-            >
-              <ArrowDown size={12} className="text-toss-text-tertiary" />
-            </button>
+              onClick={onCancelDelete}
+              className="text-[11px] text-toss-text-tertiary px-2.5 py-1 rounded-full border border-toss-border active:scale-95"
+            >취소</button>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onAskDelete}
+              aria-label="삭제"
+              className="p-1.5 rounded-full hover:bg-toss-down/10 active:scale-90"
+            >
+              <Trash2 size={13} className="text-toss-down" />
+            </button>
+            <button
+              onClick={onToggleHidden}
+              aria-label={isHidden ? '표시' : '숨김'}
+              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90"
+            >
+              {isHidden ? <Eye size={13} className="text-toss-text-secondary" /> : <Hide size={13} className="text-toss-text-tertiary" />}
+            </button>
+            <div className="flex flex-col gap-0">
+              <button
+                onClick={onMoveUp}
+                disabled={isFirst}
+                aria-label="위로"
+                className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
+              >
+                <ArrowUp size={12} className="text-toss-text-tertiary" />
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={isLast}
+                aria-label="아래로"
+                className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
+              >
+                <ArrowDown size={12} className="text-toss-text-tertiary" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -277,12 +321,22 @@ export default function Header({
   onRefresh,
   onToggleDc,
   isRefreshing,
+  onAddHolding,
 }: Props) {
+  const queryClient = useQueryClient();
   const { data: sparklines } = useQuery({
     queryKey: ['sparkline'],
     queryFn: fetchSparkline,
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
+  });
+
+  // 실제 지수 (코스피·나스닥) 현재가 + 전일 대비. 5분마다 갱신.
+  const { data: indices } = useQuery({
+    queryKey: ['indices'],
+    queryFn: fetchMarketIndices,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   // 우상단 메뉴 + 시장 현황 collapse + API 키/알림 모달
@@ -294,6 +348,25 @@ export default function Header({
 
   // 종목 카드 클릭 → 차트 모달
   const [chartTarget, setChartTarget] = useState<TickerItem | null>(null);
+  // 편집 모드에서 종목 삭제 확인 (dedupe-confirm 패턴)
+  const [pendingDeleteName, setPendingDeleteName] = useState<string | null>(null);
+
+  const deleteMut = useMutation({
+    mutationFn: ({ accName, key }: { accName: string; key: string }) => deleteHolding(accName, key),
+    onSuccess: () => {
+      setPendingDeleteName(null);
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+  });
+
+  /** 종목 이름으로 (account_name, holding_key) 찾기 — 동일 종목 여러 계좌면 첫 번째 */
+  const findHoldingLocation = (name: string): { accName: string; key: string } | null => {
+    for (const acc of data.accounts) {
+      const h = acc.holdings.find(x => x.name === name);
+      if (h) return { accName: acc.name, key: h.ticker || h.name };
+    }
+    return null;
+  };
 
   // 시장 현황 편집 모드 (순서 변경 + 숨김)
   const [marketEditing, setMarketEditing] = useState(false);
@@ -307,7 +380,12 @@ export default function Header({
   const [draftHidden, setDraftHidden] = useState<Set<string>>(new Set());
 
   const enterMarketEdit = () => {
-    setDraftOrder([...customOrder]);
+    // 저장된 커스텀 순서가 비어 있으면 현재 정렬된 종목명 리스트로 초기화
+    // (이래야 편집 모드에서 ↑↓ 버튼이 즉시 작동함)
+    const baseOrder = customOrder.length > 0
+      ? [...customOrder]
+      : tickerItems.map(t => t.name);
+    setDraftOrder(baseOrder);
     setDraftHidden(new Set(hiddenSet));
     setMarketEditing(true);
   };
@@ -475,17 +553,6 @@ export default function Header({
       }));
   })();
 
-  const nasdaqPct = (() => {
-    const arr = krItems.filter(t => t.category === 'kr_listed_overseas' && /나스닥|nasdaq|미국테크|qqq/i.test(t.name))
-                 .concat(usItems);
-    if (arr.length === 0) return null;
-    return arr.reduce((s, t) => s + t.pct, 0) / arr.length;
-  })();
-  const koreaPct = (() => {
-    const arr = krItems.filter(t => t.category === 'kr_domestic');
-    if (arr.length === 0) return null;
-    return arr.reduce((s, t) => s + t.pct, 0) / arr.length;
-  })();
 
   return (
     <>
@@ -654,16 +721,20 @@ export default function Header({
               {krItems.length > 0 && (
                 <MarketStatusCard
                   exchange="KR"
-                  indexLabel="코스피 (보유 국내 ETF 평균)"
-                  indexPct={koreaPct}
+                  indexLabel={indices?.korea?.label ?? '코스피'}
+                  indexValue={indices?.korea?.value ?? null}
+                  indexChange={indices?.korea?.change ?? null}
+                  indexChangePct={indices?.korea?.change_pct ?? null}
                   sparkData={sparklines?.korea}
                 />
               )}
               {(usItems.length > 0 || krItems.some(t => t.category === 'kr_listed_overseas')) && (
                 <MarketStatusCard
                   exchange="US"
-                  indexLabel="나스닥 (보유 미국 자산 평균)"
-                  indexPct={nasdaqPct}
+                  indexLabel={indices?.nasdaq?.label ?? '나스닥'}
+                  indexValue={indices?.nasdaq?.value ?? null}
+                  indexChange={indices?.nasdaq?.change ?? null}
+                  indexChangePct={indices?.nasdaq?.change_pct ?? null}
                   sparkData={sparklines?.nasdaq}
                 />
               )}
@@ -696,6 +767,14 @@ export default function Header({
                   </button>
                 ) : (
                   <div className="flex items-center gap-1.5">
+                    {onAddHolding && (
+                      <button
+                        onClick={onAddHolding}
+                        className="text-[11px] font-medium text-toss-blue px-2.5 py-1 rounded-full border border-toss-blue/30 bg-toss-blue-soft hover:bg-toss-blue/10 flex items-center gap-1 active:scale-95"
+                      >
+                        <Plus size={10} /> 종목 추가
+                      </button>
+                    )}
                     <button onClick={cancelMarketEdit} className="text-[11px] text-toss-text-tertiary px-2.5 py-1 rounded-full border border-toss-border active:scale-95">취소</button>
                     <button onClick={saveMarketEdit} className="text-[11px] font-semibold text-white bg-toss-blue px-3 py-1 rounded-full active:scale-95">저장</button>
                   </div>
@@ -737,10 +816,17 @@ export default function Header({
                                 isHidden={activeHidden.has(item.name)}
                                 isFirst={i === 0}
                                 isLast={i === group.items.length - 1}
+                                pendingDelete={pendingDeleteName === item.name}
                                 onClick={item.ticker ? () => setChartTarget(item) : undefined}
                                 onToggleHidden={() => toggleDraftHidden(item.name)}
                                 onMoveUp={() => moveDraftItem(item.name, -1)}
                                 onMoveDown={() => moveDraftItem(item.name, 1)}
+                                onAskDelete={() => setPendingDeleteName(item.name)}
+                                onConfirmDelete={() => {
+                                  const loc = findHoldingLocation(item.name);
+                                  if (loc) deleteMut.mutate(loc);
+                                }}
+                                onCancelDelete={() => setPendingDeleteName(null)}
                               />
                             ))}
                           </div>
@@ -777,10 +863,17 @@ export default function Header({
                             isHidden={activeHidden.has(item.name)}
                             isFirst={i === 0}
                             isLast={i === usItems.length - 1}
+                            pendingDelete={pendingDeleteName === item.name}
                             onClick={item.ticker ? () => setChartTarget(item) : undefined}
                             onToggleHidden={() => toggleDraftHidden(item.name)}
                             onMoveUp={() => moveDraftItem(item.name, -1)}
                             onMoveDown={() => moveDraftItem(item.name, 1)}
+                            onAskDelete={() => setPendingDeleteName(item.name)}
+                            onConfirmDelete={() => {
+                              const loc = findHoldingLocation(item.name);
+                              if (loc) deleteMut.mutate(loc);
+                            }}
+                            onCancelDelete={() => setPendingDeleteName(null)}
                           />
                         ))}
                       </div>
