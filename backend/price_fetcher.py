@@ -17,7 +17,7 @@ CACHE_FILE = _DATA_DIR / "price_cache.json"
 KST = timezone(timedelta(hours=9))
 ET = timezone(timedelta(hours=-4))  # EDT (summer)
 
-KOREAN_TICKERS = ["381170", "0167A0", "379800", "396500", "0021E0", "233740"]
+KOREAN_TICKERS = ["381170", "0167A0", "379800", "396500", "0021E0", "418660"]
 US_TICKERS = ["QLD", "TQQQ"]
 
 def _load_cache() -> dict:
