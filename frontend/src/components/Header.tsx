@@ -110,6 +110,7 @@ function MarketStatusCard({
   indexChange,
   indexChangePct,
   sparkData,
+  onClick,
 }: {
   exchange: Exchange;
   indexLabel: string;
@@ -117,6 +118,7 @@ function MarketStatusCard({
   indexChange: number | null;       // 전일 대비 변동 포인트 (예: +12.3)
   indexChangePct: number | null;    // 전일 대비 변동률 (%)
   sparkData?: number[];
+  onClick?: () => void;
 }) {
   const status = getMarketStatus(exchange);
   const isKR = exchange === 'KR';
@@ -134,8 +136,17 @@ function MarketStatusCard({
   const sign = indexChange !== null && indexChange >= 0 ? '+' : '';
   const fmtIndex = (v: number) => v.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const clickable = !!onClick && hasIndex;
+
   return (
-    <div className="flex-1 min-w-[180px] bg-toss-card border border-toss-border rounded-2xl px-4 py-3">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!clickable}
+      className={`text-left flex-1 min-w-[180px] bg-toss-card border border-toss-border rounded-2xl px-4 py-3 transition-all ${
+        clickable ? 'hover:border-toss-blue/50 hover:shadow-[var(--shadow-toss-card)] active:scale-[0.99] cursor-pointer' : 'cursor-default'
+      }`}
+    >
       <div className="flex items-center gap-2 mb-2">
         <span className="text-lg leading-none" aria-hidden>{flag}</span>
         <span className="text-[13px] font-bold text-toss-text-primary">{title}</span>
@@ -167,7 +178,10 @@ function MarketStatusCard({
         )}
       </div>
       <p className="text-[10px] text-toss-text-tertiary mt-1.5">{status.timeLabel}</p>
-    </div>
+      {clickable && (
+        <p className="text-[10px] text-toss-blue/70 mt-0.5">탭하여 차트 보기 →</p>
+      )}
+    </button>
   );
 }
 
@@ -348,6 +362,8 @@ export default function Header({
 
   // 종목 카드 클릭 → 차트 모달
   const [chartTarget, setChartTarget] = useState<TickerItem | null>(null);
+  // 시장 카드(코스피/나스닥 지수) 클릭 → 차트 모달
+  const [indexChart, setIndexChart] = useState<{ ticker: string; name: string; accentColor: string } | null>(null);
   // 편집 모드에서 종목 삭제 확인 (dedupe-confirm 패턴)
   const [pendingDeleteName, setPendingDeleteName] = useState<string | null>(null);
 
@@ -726,6 +742,11 @@ export default function Header({
                   indexChange={indices?.korea?.change ?? null}
                   indexChangePct={indices?.korea?.change_pct ?? null}
                   sparkData={sparklines?.korea}
+                  onClick={indices?.korea?.value ? () => setIndexChart({
+                    ticker: '^KS11',
+                    name: '코스피 (KOSPI)',
+                    accentColor: '#3182F6',
+                  }) : undefined}
                 />
               )}
               {(usItems.length > 0 || krItems.some(t => t.category === 'kr_listed_overseas')) && (
@@ -736,6 +757,11 @@ export default function Header({
                   indexChange={indices?.nasdaq?.change ?? null}
                   indexChangePct={indices?.nasdaq?.change_pct ?? null}
                   sparkData={sparklines?.nasdaq}
+                  onClick={indices?.nasdaq?.value ? () => setIndexChart({
+                    ticker: '^IXIC',
+                    name: '나스닥 (NASDAQ Composite)',
+                    accentColor: '#8B5CF6',
+                  }) : undefined}
                 />
               )}
               <button
@@ -900,6 +926,25 @@ export default function Header({
             accentColor={chartTarget.accentColor}
             currentDisplay={chartTarget.price}
             onClose={() => setChartTarget(null)}
+          />
+        </Suspense>
+      )}
+      {/* 지수 차트 모달 (코스피 / 나스닥) */}
+      {indexChart && (
+        <Suspense fallback={null}>
+          <TickerChartModal
+            ticker={indexChart.ticker}
+            name={indexChart.name}
+            shortLabel="지수"
+            accentColor={indexChart.accentColor}
+            currentDisplay={
+              indexChart.ticker === '^KS11'
+                ? (indices?.korea?.value ?? null)?.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? null
+                : indexChart.ticker === '^IXIC'
+                  ? (indices?.nasdaq?.value ?? null)?.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? null
+                  : null
+            }
+            onClose={() => setIndexChart(null)}
           />
         </Suspense>
       )}
