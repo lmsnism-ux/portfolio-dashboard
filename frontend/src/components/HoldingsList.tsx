@@ -278,8 +278,11 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
 
       <div className="space-y-3">
         {grouped.map(({ cat, accounts, idx: catIdx }) => {
-          const catTotal = accounts.reduce((s, a) => s + a.value_krw, 0);
-          const catDay = accounts.reduce((s, a) => s + a.day_change_krw, 0);
+          const catTotal  = accounts.reduce((s, a) => s + a.value_krw, 0);
+          const catDay    = accounts.reduce((s, a) => s + a.day_change_krw, 0);
+          const catProfit = accounts.reduce((s, a) => s + a.profit_krw, 0);
+          const catCost   = accounts.reduce((s, a) => s + a.cost_krw, 0);
+          const catProfitPct = catCost > 0 ? (catProfit / catCost) * 100 : null;
 
           const catStyle = CAT_STYLE[cat] ?? CAT_STYLE['기타'];
           return (
@@ -335,9 +338,22 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                   <p className="num text-sm font-bold text-toss-text-primary">
                     {hideAssets ? '••••••' : fmtKRW(catTotal)}
                   </p>
-                  <p className={`num text-[11px] ${colorClass(catDay)}`}>
-                    {catDay >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(catDay)}
-                  </p>
+                  {periodMode === '오늘' ? (
+                    <p className={`num text-[11px] ${colorClass(catDay)}`}>
+                      {catDay >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(catDay)}
+                    </p>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1">
+                      <p className={`num text-[11px] ${colorClass(catProfit)}`}>
+                        {catProfit >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(catProfit)}
+                      </p>
+                      {catProfitPct !== null && !hideAssets && (
+                        <p className={`num text-[10px] ${colorClass(catProfitPct)}`}>
+                          ({fmtPct(catProfitPct)})
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

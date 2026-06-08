@@ -402,15 +402,19 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
 
     # 부동산 순자산 (현재가 - 대출잔액) 계산 후 총계에 합산
     real_estate = portfolio.get("real_estate")
-    re_equity_krw = 0
-    re_cost_krw   = 0
+    re_equity_krw       = 0
+    re_cost_krw         = 0
+    re_gross_value_krw  = 0  # 부동산 매매가 합계 (대출 미차감)
+    re_loan_krw         = 0  # 대출잔액 합계
     if real_estate:
         for prop in real_estate.get("properties", []):
             cur      = prop.get("current_value_krw", 0)
             purchase = prop.get("purchase_price_krw", 0)
             loan_bal = (prop.get("loan") or {}).get("balance_krw", 0)
-            re_equity_krw += cur - loan_bal
-            re_cost_krw   += purchase - loan_bal
+            re_equity_krw      += cur - loan_bal
+            re_cost_krw        += purchase - loan_bal
+            re_gross_value_krw += cur
+            re_loan_krw        += loan_bal
     total_value_krw += re_equity_krw
     total_cost_krw  += re_cost_krw
 
@@ -521,6 +525,8 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "total_profit_krw": round(total_profit_krw),
         "real_estate_equity_krw": round(re_equity_krw),
         "real_estate_cost_krw": round(re_cost_krw),
+        "real_estate_gross_value_krw": round(re_gross_value_krw),
+        "real_estate_loan_krw": round(re_loan_krw),
         "cash_assets": portfolio.get("cash_assets"),
         "cash_total_krw": round(cash_total_krw),
         "total_profit_pct": round(total_profit_pct, 2) if total_profit_pct is not None else None,

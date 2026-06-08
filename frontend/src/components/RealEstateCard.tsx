@@ -7,7 +7,9 @@ interface Props {
   data: RealEstateData;
   hideAssets: boolean;
   visible: boolean;
+  loanOn: boolean;
   onToggle: (on: boolean) => void;
+  onToggleLoan: (on: boolean) => void;
 }
 
 // 말일 납부일 계산 (말일 주말이면 다음 달 첫 영업일)
@@ -32,7 +34,7 @@ function fmtDate(d: Date): string {
   return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
-export default function RealEstateCard({ data, hideAssets, visible, onToggle }: Props) {
+export default function RealEstateCard({ data, hideAssets, visible, loanOn, onToggle, onToggleLoan }: Props) {
   const [open, setOpen] = useState(visible);
 
   const toggleVisible = () => {
@@ -62,28 +64,51 @@ export default function RealEstateCard({ data, hideAssets, visible, onToggle }: 
           <Home size={15} className="text-emerald-500" />
         </div>
         <h3 className="text-sm font-semibold text-toss-text-primary flex-1">부동산 · 대출</h3>
-        {/* ON/OFF 토글 */}
-        <button
-          type="button"
-          onClick={toggleVisible}
-          className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
-            visible ? 'bg-emerald-500' : 'bg-toss-border'
-          }`}
-          title={visible ? '숨기기' : '보이기'}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-            visible ? 'translate-x-4' : ''
-          }`} />
-        </button>
-        {visible && (
-          <button
-            type="button"
-            onClick={() => setOpen(o => !o)}
-            className="p-1 rounded-full hover:bg-toss-bg transition-all"
-          >
-            {open ? <ChevronUp size={16} className="text-toss-text-tertiary" /> : <ChevronDown size={16} className="text-toss-text-tertiary" />}
-          </button>
-        )}
+        <div className="flex items-center gap-2.5">
+          {/* 부동산 토글 */}
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-toss-text-tertiary">부동산</span>
+            <button
+              type="button"
+              onClick={toggleVisible}
+              className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
+                visible ? 'bg-emerald-500' : 'bg-toss-border'
+              }`}
+              title={visible ? '총자산 제외' : '총자산 포함'}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                visible ? 'translate-x-4' : ''
+              }`} />
+            </button>
+          </div>
+          {/* 대출 토글 (부동산 ON일 때만) */}
+          {visible && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-toss-text-tertiary">대출</span>
+              <button
+                type="button"
+                onClick={() => onToggleLoan(!loanOn)}
+                className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
+                  loanOn ? 'bg-toss-down/70' : 'bg-toss-border'
+                }`}
+                title={loanOn ? '대출 부채 반영 중' : '대출 미반영'}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  loanOn ? 'translate-x-4' : ''
+                }`} />
+              </button>
+            </div>
+          )}
+          {visible && (
+            <button
+              type="button"
+              onClick={() => setOpen(o => !o)}
+              className="p-1 rounded-full hover:bg-toss-bg transition-all"
+            >
+              {open ? <ChevronUp size={16} className="text-toss-text-tertiary" /> : <ChevronDown size={16} className="text-toss-text-tertiary" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {visible && open && (

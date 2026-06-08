@@ -147,6 +147,8 @@ export interface PortfolioSummary {
   real_estate?: RealEstateData;
   real_estate_equity_krw?: number;
   real_estate_cost_krw?: number;
+  real_estate_gross_value_krw?: number;
+  real_estate_loan_krw?: number;
   cash_assets?: CashAssetsData;
   cash_total_krw?: number;
   calculated_at: string;

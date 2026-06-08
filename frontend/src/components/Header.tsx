@@ -61,6 +61,7 @@ interface Props {
   dark: boolean;
   hideAssets: boolean;
   realEstateOn: boolean;
+  loanOn: boolean;
   dcOn: boolean;
   onToggleDark: () => void;
   onToggleHide: () => void;
@@ -142,6 +143,7 @@ export default function Header({
   dark,
   hideAssets,
   realEstateOn,
+  loanOn,
   dcOn,
   onToggleDark,
   onToggleHide,
@@ -162,14 +164,30 @@ export default function Header({
   const dcProfit  = dcAccs.reduce((s, a) => s + a.profit_krw, 0);
   const dcCost    = dcAccs.reduce((s, a) => s + a.cost_krw, 0);
 
-  const reEquity = realEstateOn ? 0 : (data.real_estate_equity_krw ?? 0);
-  const reCost   = realEstateOn ? 0 : (data.real_estate_cost_krw ?? 0);
+  // 부동산/대출 분리 토글 계산
+  // 백엔드 total_value_krw = 투자자산 + (부동산현재가 - 대출잔액) = 투자자산 + re_equity
+  const reEquityRaw = data.real_estate_equity_krw ?? 0;
+  const reCostRaw   = data.real_estate_cost_krw ?? 0;
+  const reLoan      = data.real_estate_loan_krw ?? 0;
+
+  let reAdjustValue = 0;  // total_value_krw에 더할 보정값
+  let reAdjustCost  = 0;  // total_cost_krw에 더할 보정값
+  if (!realEstateOn) {
+    // 부동산 전체 제외
+    reAdjustValue = -reEquityRaw;
+    reAdjustCost  = -reCostRaw;
+  } else if (!loanOn) {
+    // 부동산은 포함, 대출은 부채로 미반영 (총자산에 대출잔액 추가)
+    reAdjustValue = reLoan;
+    reAdjustCost  = reLoan;
+  }
+
   const dcExclude = dcOn ? 0 : dcKrw;
 
-  const displayTotal     = data.total_value_krw - dcExclude - reEquity;
+  const displayTotal     = data.total_value_krw - dcExclude + reAdjustValue;
   const displayDayChg    = data.total_day_change_krw - (dcOn ? 0 : dcDayChg);
-  const displayProfit    = data.total_profit_krw - (dcOn ? 0 : dcProfit) - (reEquity - reCost);
-  const investCost       = data.total_cost_krw - (dcOn ? 0 : dcCost) - reCost;
+  const displayProfit    = data.total_profit_krw - (dcOn ? 0 : dcProfit) + (reAdjustValue - reAdjustCost);
+  const investCost       = data.total_cost_krw - (dcOn ? 0 : dcCost) + reAdjustCost;
   const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
   const prevTotal        = displayTotal - displayDayChg;
   const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
