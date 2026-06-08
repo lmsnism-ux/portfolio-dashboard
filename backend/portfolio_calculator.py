@@ -14,16 +14,15 @@ PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
 
 
 def _seed_from_env() -> bool:
-    """첫 실행 시 환경변수 PORTFOLIO_JSON_B64 가 있으면 그걸로 초기 파일 생성."""
-    if PORTFOLIO_FILE.exists():
-        return False
+    """환경변수 PORTFOLIO_JSON_B64 가 있으면 파일과 동기화 (항상 env 우선)."""
     encoded = os.environ.get("PORTFOLIO_JSON_B64")
     if not encoded:
         return False
     try:
         raw = base64.b64decode(encoded).decode("utf-8")
-        # 유효성 체크
-        json.loads(raw)
+        json.loads(raw)  # 유효성 체크
+        if PORTFOLIO_FILE.exists() and PORTFOLIO_FILE.read_text().strip() == raw.strip():
+            return False  # 동일하면 스킵
         PORTFOLIO_FILE.write_text(raw)
         return True
     except Exception:

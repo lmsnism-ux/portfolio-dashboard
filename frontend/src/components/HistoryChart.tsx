@@ -6,9 +6,10 @@ import { fetchHistory, triggerBackfill } from '../api';
 import { fmtKRW, fmtPct, colorClass } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = '3M' | 'YTD' | 'ALL' | 'CM' | 'PM' | 'CUSTOM';
+type Range = 'TODAY' | 'CM' | 'PM' | '3M' | 'YTD' | 'ALL' | 'CUSTOM';
 
 const RANGES: { key: Range; label: string; days: number }[] = [
+  { key: 'TODAY', label: '오늘', days: 1 },
   { key: 'CM', label: '당월', days: 0 },
   { key: 'PM', label: '전월', days: 0 },
   { key: '3M', label: '3개월', days: 92 },
@@ -67,6 +68,10 @@ const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
 
 function getRangeCutoff(key: Range, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
   const now = new Date();
+  if (key === 'TODAY') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return { from: start, to: null };
+  }
   if (key === 'CM') {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: null };
   }
@@ -89,7 +94,7 @@ function getRangeCutoff(key: Range, customFrom: string, customTo: string): { fro
 }
 
 export default function HistoryChart({ data, hideAssets }: Props) {
-  const [range, setRange] = useState<Range>('CM');
+  const [range, setRange] = useState<Range>('TODAY');
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -113,8 +118,13 @@ export default function HistoryChart({ data, hideAssets }: Props) {
       return result;
     }
     const earliest = items[0].date;
+    const todayStr = new Date().toISOString().slice(0, 10);
     RANGES.forEach(r => {
       if (r.key === 'ALL' || r.key === 'CUSTOM') { result[r.key] = 'full'; return; }
+      if (r.key === 'TODAY') {
+        result[r.key] = items.some(p => p.date === todayStr) ? 'full' : 'no-extra';
+        return;
+      }
       const { from } = getRangeCutoff(r.key, '', '');
       if (!from) { result[r.key] = 'full'; return; }
       const cutoffStr = from.toISOString().slice(0, 10);
@@ -169,7 +179,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
   }, [items]);
 
   const RANGE_LABEL: Partial<Record<Range, string>> = {
-    CM: '당월', PM: '전월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
+    TODAY: '오늘', CM: '당월', PM: '전월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
   };
 
   // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시
@@ -227,6 +237,20 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                 }`}>
                   {fmtPct(periodChange.pct)}
                 </span>
+              </div>
+            ) : range === 'TODAY' ? (
+              <div className="flex items-baseline gap-2">
+                <span className={`num text-2xl font-extrabold tracking-tight ${colorClass(data.total_day_change_krw)}`}>
+                  {data.total_day_change_krw >= 0 ? '+' : ''}
+                  {hideAssets ? '••••••' : fmtKRW(data.total_day_change_krw)}
+                </span>
+                {data.total_day_change_pct !== null && (
+                  <span className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
+                    data.total_day_change_pct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
+                  }`}>
+                    {fmtPct(data.total_day_change_pct)}
+                  </span>
+                )}
               </div>
             ) : last ? (
               <p className="num text-sm text-toss-text-tertiary">현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}</p>

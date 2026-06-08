@@ -261,11 +261,12 @@ export default function Header({
       {tickerItems.length > 0 && (
         <div className="bg-toss-card border-b border-toss-border">
           <div className="max-w-7xl mx-auto px-5 py-3">
-            <div className="flex flex-col sm:flex-row gap-1.5">
-              {/* 미국 (나스닥 + S&P500) */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              {/* 미국 주식 */}
               {hasUs && (
-                <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5 sm:flex-1">
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="sm:flex-1 rounded-2xl bg-toss-bg px-3.5 pt-2.5 pb-3">
+                  <p className="text-[9px] font-bold text-toss-text-tertiary/80 tracking-[0.12em] uppercase mb-2">미국 주식</p>
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
                     {(['nasdaq', 'sp500'] as const).filter(g => groups[g].length > 0).map(g => (
                       <GroupHeaderBadge key={g} label={GROUP_CONFIG[g].label} pct={groupAvgPct(groups[g])} />
                     ))}
@@ -279,10 +280,13 @@ export default function Header({
                   )}
                 </div>
               )}
-              {/* 한국 (코스피) */}
+              {/* 국내 주식 */}
               {groups.korea.length > 0 && (
-                <div className="rounded-xl border border-toss-border/50 bg-toss-bg/50 px-3 py-2.5 space-y-1.5 sm:flex-1">
-                  <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                <div className="sm:flex-1 rounded-2xl bg-toss-bg px-3.5 pt-2.5 pb-3">
+                  <p className="text-[9px] font-bold text-toss-text-tertiary/80 tracking-[0.12em] uppercase mb-2">국내 주식</p>
+                  <div className="mb-1.5">
+                    <GroupHeaderBadge label={GROUP_CONFIG.korea.label} pct={groupAvgPct(groups.korea)} />
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {groups.korea.map((item, i) => (
                       <Badge key={i} item={item} hideAssets={hideAssets} />
