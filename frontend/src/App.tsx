@@ -153,7 +153,13 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-4">
         {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
-        <HistoryChart data={data} hideAssets={hideAssets} />
+        <HistoryChart
+          data={data}
+          hideAssets={hideAssets}
+          dcOn={dcOn}
+          realEstateOn={realEstateOn}
+          loanOn={loanOn}
+        />
 
         {/* 부동산 · 대출 - HistoryChart 바로 아래 */}
         {data.real_estate && (
