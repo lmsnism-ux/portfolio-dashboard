@@ -247,6 +247,50 @@ export function classifyHolding(h: HoldingLike): HoldingClassification {
   };
 }
 
+// ── 한국거래소 휴장일 ──────────────────────────────────────
+// 평일이라도 공휴일이거나 연말 폐장일이면 한국장은 휴장.
+// 한국거래소 공식 공지 기준 (https://open.krx.co.kr/contents/MKD/01/0110/01100305/MKD01100305.jsp).
+// 임시공휴일(대선 등) 추가될 수 있으므로 매년 연초 갱신 권장.
+export const KR_MARKET_HOLIDAYS: ReadonlySet<string> = new Set([
+  // 2025
+  '2025-01-01', // 신정
+  '2025-01-28', '2025-01-29', '2025-01-30', // 설날 연휴 + 임시
+  '2025-03-03', // 삼일절 대체(원래 3/1 토)
+  '2025-05-01', // 근로자의 날
+  '2025-05-05', // 어린이날
+  '2025-05-06', // 대체공휴일
+  '2025-06-03', // 대선 임시공휴일
+  '2025-06-06', // 현충일
+  '2025-08-15', // 광복절
+  '2025-10-03', // 개천절
+  '2025-10-06', '2025-10-07', '2025-10-08', // 추석 연휴
+  '2025-10-09', // 한글날
+  '2025-12-25', // 크리스마스
+  '2025-12-31', // 연말 폐장
+  // 2026
+  '2026-01-01', // 신정
+  '2026-02-16', '2026-02-17', '2026-02-18', // 설날 연휴
+  '2026-03-02', // 삼일절 대체(원래 3/1 일)
+  '2026-05-01', // 근로자의 날
+  '2026-05-05', // 어린이날
+  '2026-05-25', // 부처님오신날
+  '2026-06-03', // 지방선거
+  '2026-09-24', '2026-09-25', '2026-09-26', // 추석 연휴
+  '2026-10-09', // 한글날 (금)
+  '2026-12-25', // 크리스마스
+  '2026-12-31', // 연말 폐장
+]);
+
+function _kstDateStr(now: Date): string {
+  // 사용자 로컬 timezone과 무관하게 KST 기준 YYYY-MM-DD
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+export function isKrMarketHoliday(now: Date = new Date()): boolean {
+  return KR_MARKET_HOLIDAYS.has(_kstDateStr(now));
+}
+
 // ── 시장 시간 (KST 기준) ────────────────────────────────────
 
 export interface MarketStatus {
@@ -287,6 +331,9 @@ export function getMarketStatus(exchange: Exchange, now: Date = new Date()): Mar
     const close = 15 * 60 + 30; // 15:30
     if (dow === 0 || dow === 6) {
       return { exchange, state: 'closed', label: '주말 휴장', timeLabel: '평일 09:00 ~ 15:30 (KST)' };
+    }
+    if (isKrMarketHoliday(now)) {
+      return { exchange, state: 'closed', label: '공휴일 휴장', timeLabel: '한국거래소 휴장일' };
     }
     if (minutes < open)  return { exchange, state: 'pre',  label: '장 시작 전', timeLabel: '09:00 개장 (KST)' };
     if (minutes > close) return { exchange, state: 'post', label: '장 마감',    timeLabel: '15:30 마감 (KST)' };

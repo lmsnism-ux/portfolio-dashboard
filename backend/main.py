@@ -17,6 +17,7 @@ from price_fetcher import refresh_all_prices, get_cached_prices
 from portfolio_calculator import load_portfolio, build_portfolio_summary, save_portfolio
 from history_store import record_snapshot_from_summary, get_history
 from history_backfill import backfill_history
+from holidays import is_kr_market_closed_today
 from trade_store import (
     insert_trade,
     list_trades,
@@ -57,18 +58,26 @@ async def lifespan(app: FastAPI):
     # 기존 00:30 단일 backfill은 어느 시장 마감과도 무관한 시각이라, 사용자
     # 호출 시각에 따라 스냅샷 시점이 비균질했다. 시장 마감 직후 두 번 적재해
     # '한국장 마감 종가' / '미국장 마감 종가'를 모두 반영하도록 변경.
+    def _kr_close_snapshot() -> None:
+        # 한국 공휴일/주말은 외부 API 호출만 늘어나고 새 종가가 없으므로 skip
+        if is_kr_market_closed_today():
+            logger.info("한국장 휴장 — kr_close_snapshot skip")
+            return
+        backfill_history(days=2)
+
     # KST 16:30 — 한국장 마감(15:30) 직후. 그날 한국 종가 확정.
     scheduler.add_job(
-        lambda: backfill_history(days=2),
+        _kr_close_snapshot,
         "cron", hour=16, minute=30, timezone="Asia/Seoul", id="kr_close_snapshot",
     )
     # KST 06:30 — 미국장 마감(EST/EDT 16:00 ≈ KST 05:00~06:00) 직후. 미국 종가 반영.
+    # 미국 공휴일은 별도 캘린더 필요(향후) — 일단 항상 실행.
     scheduler.add_job(
         lambda: backfill_history(days=2),
         "cron", hour=6, minute=30, timezone="Asia/Seoul", id="us_close_snapshot",
     )
     scheduler.start()
-    logger.info("스케줄러 시작 (7분 갱신 + 한국·미국 마감 backfill 2회)")
+    logger.info("스케줄러 시작 (7분 갱신 + 한국·미국 마감 backfill 2회, 한국 휴장일 가드)")
 
     yield
 
