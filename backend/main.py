@@ -468,6 +468,15 @@ async def reorder_accounts(body: AccountOrder):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/portfolio/import", dependencies=[Depends(require_api_key)])
+async def import_portfolio(request: Request):
+    """포트폴리오 전체 교체 (마이그레이션용)."""
+    from portfolio_calculator import PORTFOLIO_FILE
+    data = await request.json()
+    PORTFOLIO_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "ok", "accounts": len(data.get("accounts", []))}
+
+
 @app.patch("/api/portfolio/goal", dependencies=[Depends(require_api_key)])
 async def update_goal(update: GoalUpdate):
     """목표 자산 금액 설정"""
