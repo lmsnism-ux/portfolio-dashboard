@@ -49,7 +49,9 @@ export default function TickerChartModal({
   });
 
   const items = data?.items ?? [];
-  const isUsd = data?.currency === 'USD';
+  // 지수(^IXIC, ^GSPC, ^KS11 …)는 통화 단위가 아니라 포인트(pt). 종목 USD/KRW 분기에서 제외.
+  const isIndex = ticker.startsWith('^');
+  const isUsd = !isIndex && data?.currency === 'USD';
   const first = items[0]?.close ?? 0;
   const last = items[items.length - 1]?.close ?? 0;
   const diff = last - first;
@@ -61,7 +63,11 @@ export default function TickerChartModal({
   const maxClose = items.length ? Math.max(...items.map(x => x.close)) : 0;
 
   const fmtPrice = (v: number) =>
-    isUsd ? `$${v.toFixed(2)}` : `₩${Math.round(v).toLocaleString('ko-KR')}`;
+    isIndex
+      ? `${v.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} pt`
+      : isUsd
+        ? `$${v.toFixed(2)}`
+        : `₩${Math.round(v).toLocaleString('ko-KR')}`;
 
   return (
     <div
@@ -169,7 +175,13 @@ export default function TickerChartModal({
                   />
                   <YAxis
                     tick={{ fontSize: 11, fill: 'var(--color-toss-text-tertiary)' }}
-                    tickFormatter={v => isUsd ? `$${v.toFixed(0)}` : `${Math.round(v / 1000)}k`}
+                    tickFormatter={v =>
+                      isIndex
+                        ? v.toLocaleString('ko-KR', { maximumFractionDigits: 0 })
+                        : isUsd
+                          ? `$${v.toFixed(0)}`
+                          : `${Math.round(v / 1000)}k`
+                    }
                     tickLine={false}
                     axisLine={false}
                     width={48}
