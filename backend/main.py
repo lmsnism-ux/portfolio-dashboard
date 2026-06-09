@@ -640,6 +640,33 @@ async def get_ticker_history(ticker: str, range: str = "1mo"):
     return data
 
 
+# 시장 인사이트 캐시 (뉴스 + 종목 시그널). 30분.
+_insights_cache: dict = {}
+_insights_ts: float = 0.0
+_INSIGHTS_TTL = 1800
+
+
+@app.get("/api/market/insights", dependencies=[Depends(require_read_auth)])
+async def get_market_insights():
+    """시장 뉴스 헤드라인 + 보유 종목 기술적 시그널. 30분 캐시.
+
+    보유 종목 정보가 노출되므로 read-auth 보호 대상.
+    """
+    global _insights_cache, _insights_ts
+    if _insights_cache and time.time() - _insights_ts < _INSIGHTS_TTL:
+        return _insights_cache
+
+    from market_insights import build_insights
+    try:
+        data = await asyncio.to_thread(build_insights)
+        _insights_cache = data
+        _insights_ts = time.time()
+        return data
+    except Exception as e:
+        logger.error(f"인사이트 생성 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/prices", dependencies=[Depends(require_read_auth)])
 async def get_prices():
     """캐시된 가격 데이터 반환"""
