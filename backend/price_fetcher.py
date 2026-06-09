@@ -16,7 +16,15 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_FILE = _DATA_DIR / "price_cache.json"
 PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
 KST = timezone(timedelta(hours=9))
-ET = timezone(timedelta(hours=-4))  # EDT (summer)
+
+# 미국 동부 시간: 서머타임(EDT=-4) / 겨울(EST=-5) 자동 전환.
+# 이전엔 -4 고정값이라 11월 첫째주~3월 둘째주에 미국장 개장/마감 판정이 1시간 어긋났다.
+try:
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+except Exception as _zi_err:  # pragma: no cover - tzdata 미설치 환경 폴백
+    logger.warning(f"zoneinfo 사용 불가, EDT(-4) 고정값으로 폴백: {_zi_err}")
+    ET = timezone(timedelta(hours=-4))
 
 # 폴백용 기본 티커. portfolio.json에서 더 많이 발견되면 자동 확장.
 DEFAULT_KOREAN_TICKERS = ["381170", "0167A0", "379800", "396500", "0021E0", "418660"]
