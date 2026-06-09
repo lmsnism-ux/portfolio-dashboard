@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide, Trash2, Plus } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, type Exchange, type HoldingClass } from '../utils';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, isPriceStale, STALE_PRICE_THRESHOLD_HOURS, type Exchange, type HoldingClass } from '../utils';
 import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding } from '../api';
 import {
   loadSettings as loadNotifSettings,
@@ -297,9 +297,18 @@ function HoldingCard({
       } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
-          {etfDisplayName(item.name)}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
+            {etfDisplayName(item.name)}
+          </p>
+          {isPriceStale(item.fetchedAt) && (
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+              title={`가격 데이터가 ${STALE_PRICE_THRESHOLD_HOURS}시간 이상 갱신되지 않았어요 (${relativeTime(item.fetchedAt)})`}
+              aria-label="가격 데이터 오래됨"
+            />
+          )}
+        </div>
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
           <span
             className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"

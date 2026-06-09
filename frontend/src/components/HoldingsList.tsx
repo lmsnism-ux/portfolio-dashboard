@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Pencil, Plus, ChevronUp, ChevronDown, ArrowLeftRight, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { chartColor, fmtKRW, fmtPct, colorClass, categorizeAccount, CATEGORY_ORDER } from '../utils';
+import { chartColor, fmtKRW, fmtPct, colorClass, categorizeAccount, CATEGORY_ORDER, isPriceStale, STALE_PRICE_THRESHOLD_HOURS, relativeTime } from '../utils';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 import { deleteHolding } from '../api';
 import IrpMonitor from './IrpMonitor';
@@ -458,9 +458,18 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                             <Avatar name={h.name} ticker={h.ticker} color={color} />
 
                             <div className="flex-1 min-w-0">
-                              <p className="text-[13px] font-semibold text-toss-text-primary truncate leading-snug">
-                                {h.name}
-                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[13px] font-semibold text-toss-text-primary truncate leading-snug">
+                                  {h.name}
+                                </p>
+                                {isPriceStale(h.fetched_at) && (
+                                  <span
+                                    className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+                                    title={`가격 데이터가 ${STALE_PRICE_THRESHOLD_HOURS}시간 이상 갱신되지 않았어요 (${relativeTime(h.fetched_at ?? null)})`}
+                                    aria-label="가격 데이터 오래됨"
+                                  />
+                                )}
+                              </div>
                               {h.ticker && (
                                 <p className="text-[11px] text-toss-text-tertiary mt-0.5">{h.ticker}</p>
                               )}

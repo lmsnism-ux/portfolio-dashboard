@@ -102,6 +102,22 @@ export function relativeTime(isoStr: string | null): string {
   return `${Math.floor(diff / 86400)}일 전`;
 }
 
+/**
+ * 종목 가격이 stale한지 판정. fetched_at(ISO) 가 threshold 이상 지난 경우 true.
+ * 한국장 점심 휴장이나 외국 시장 휴장 등을 고려해 보수적으로 6시간 권장.
+ */
+export const STALE_PRICE_THRESHOLD_HOURS = 6;
+export function isPriceStale(
+  fetchedAt: string | null | undefined,
+  thresholdHours: number = STALE_PRICE_THRESHOLD_HOURS,
+): boolean {
+  if (!fetchedAt) return false;
+  const ts = new Date(fetchedAt).getTime();
+  if (Number.isNaN(ts)) return false;
+  const hoursAgo = (Date.now() - ts) / 3_600_000;
+  return hoursAgo > thresholdHours;
+}
+
 export function fmtAbsTime(isoStr: string | null): string {
   if (!isoStr) return '-';
   const d = new Date(isoStr);
