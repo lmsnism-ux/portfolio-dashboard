@@ -159,6 +159,32 @@ export interface TradeAggregate {
   avg_price_from_trades: number | null;
 }
 
+// ── 시장 인사이트 (뉴스 + 기술적 시그널) ──
+export interface InsightNews {
+  title: string | null;
+  publisher: string | null;
+  link: string | null;
+  published_at: string | null;
+}
+
+export interface HoldingSignal {
+  name: string;
+  ticker: string;
+  exchange: 'KR' | 'US';
+  signal: 'buy' | 'hold' | 'sell';
+  signal_label: string;
+  rsi: number | null;
+  mom20_pct: number | null;
+  reasons: string[];
+}
+
+export interface MarketInsights {
+  generated_at: string;
+  news: { kospi: InsightNews[]; nasdaq: InsightNews[] };
+  signals: HoldingSignal[];
+  disclaimer: string;
+}
+
 export interface PortfolioSummary {
   total_value_krw: number;
   total_cost_krw: number;

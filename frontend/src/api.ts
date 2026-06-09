@@ -1,4 +1,4 @@
-import type { HistoryPoint, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
+import type { HistoryPoint, MarketInsights, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
 
 // dev에서는 vite proxy가 /api를 백엔드로 forward.
 // 배포 시 VITE_API_BASE=https://your-api.onrender.com 같이 지정.
@@ -193,6 +193,12 @@ export async function fetchMarketIndices(): Promise<Record<string, MarketIndex>>
   } catch {
     return {};
   }
+}
+
+export async function fetchMarketInsights(): Promise<MarketInsights> {
+  const res = await readFetch(`${BASE}/market/insights`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
 }
 
 export async function fetchSparkline(): Promise<Record<string, number[]>> {

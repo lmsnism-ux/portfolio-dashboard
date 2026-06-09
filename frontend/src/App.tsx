@@ -16,8 +16,9 @@ import { useAlertTriggers } from './hooks/useAlertTriggers';
 import type { AccountData, HoldingData } from './types';
 
 // 부가 컴포넌트: 첫 화면에 즉시 필요 없음 → lazy load
-const RebalanceCard     = lazy(() => import('./components/RebalanceCard'));
-const ProfitHeatmap     = lazy(() => import('./components/ProfitHeatmap'));
+const RebalanceCard      = lazy(() => import('./components/RebalanceCard'));
+const ProfitHeatmap      = lazy(() => import('./components/ProfitHeatmap'));
+const MarketInsightsCard = lazy(() => import('./components/MarketInsightsCard'));
 const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
 const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
 const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
@@ -210,10 +211,11 @@ export default function App() {
 
         <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
 
-        {/* 리밸런싱 도우미 + 히트맵 (lazy load) */}
+        {/* 리밸런싱 도우미 + 히트맵 + 시장 인사이트 (lazy load) */}
         <Suspense fallback={null}>
           <RebalanceCard data={data} hideAssets={hideAssets} />
           <ProfitHeatmap />
+          <MarketInsightsCard />
         </Suspense>
 
         {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
