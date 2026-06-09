@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -485,6 +485,49 @@ _indices_cache: dict = {}
 _indices_ts: float = 0.0
 
 
+def _yahoo_bar_date(ts: int, gmtoffset: int | None) -> str:
+    """Yahoo bar timestamp → 거래소 현지 기준 YYYY-MM-DD.
+
+    서버 timezone에 의존하지 않도록 meta.gmtoffset(거래소 UTC 오프셋, 초)을 사용.
+    """
+    if gmtoffset is not None:
+        return (datetime.fromtimestamp(ts, tz=timezone.utc) + timedelta(seconds=gmtoffset)).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+
+def _resolve_last_prev(items: list[dict], meta: dict) -> tuple[float | None, float | None]:
+    """현재가와 직전 거래일 종가 결정.
+
+    Yahoo의 일봉 시리즈는 비거래시간이나 데이터 지연으로 당일 bar가 빠진 채
+    (close=null 포함) 직전 거래일까지만 오는 경우가 있다. 그때 items[-1]/[-2]만
+    쓰면 '전일 종가가 현재가로, 전전일 대비가 전일 대비로' 잘못 표시된다.
+
+    보정: meta.regularMarketPrice(가장 최근 체결가)를 현재가로 쓰고,
+    regularMarketTime의 거래일이 시리즈 마지막 bar와 다르면(시리즈 지연)
+    마지막 bar 자체가 직전 거래일 종가다.
+    """
+    if not items:
+        return None, None
+    last_bar = items[-1]
+    market_price = meta.get("regularMarketPrice")
+    last = float(market_price) if market_price is not None else last_bar["close"]
+
+    market_time = meta.get("regularMarketTime")
+    gmtoffset = meta.get("gmtoffset")
+    market_date = None
+    if market_time is not None:
+        market_date = _yahoo_bar_date(market_time, gmtoffset)
+
+    if market_date is not None and last_bar["date"] != market_date:
+        # 시리즈가 직전 거래일까지만 옴 → 마지막 bar가 곧 전일 종가
+        prev = last_bar["close"]
+    elif len(items) >= 2:
+        prev = items[-2]["close"]
+    else:
+        prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    return last, prev
+
+
 def _fetch_yahoo_chart(symbol: str, range: str = "30d", interval: str = "1d") -> dict | None:
     """Yahoo Finance HTTP API 호출 (yfinance 의존 없이).
 
@@ -502,19 +545,18 @@ def _fetch_yahoo_chart(symbol: str, range: str = "30d", interval: str = "1d") ->
         timestamps = node.get("timestamp", []) or []
         closes_raw = node["indicators"]["quote"][0].get("close", []) or []
         meta = node.get("meta", {}) or {}
+        gmtoffset = meta.get("gmtoffset")
         items = []
         for ts, close in zip(timestamps, closes_raw):
             if close is None:
                 continue
-            from datetime import datetime as _dt
             items.append({
-                "date": _dt.fromtimestamp(ts).strftime("%Y-%m-%d"),
+                "date": _yahoo_bar_date(ts, gmtoffset),
                 "close": round(float(close), 4),
             })
         if not items:
             return None
-        last = items[-1]["close"]
-        prev = items[-2]["close"] if len(items) >= 2 else (meta.get("chartPreviousClose") or meta.get("previousClose"))
+        last, prev = _resolve_last_prev(items, meta)
         change = (last - prev) if prev else None
         change_pct = (change / prev * 100) if (prev and change is not None) else None
         return {
