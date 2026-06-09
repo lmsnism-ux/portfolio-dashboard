@@ -1,116 +1,128 @@
-# 배포 가이드 (PC 꺼져도 모바일에서 외부 접속)
+# 배포 가이드
 
-목표: PC를 꺼도 모바일에서 인터넷만 있으면 대시보드를 조회. **편집(PATCH)은 보수적으로 — 자세한 내용은 아래 "한계" 참고.**
+이 저장소의 현재 기준 배포 구조는 **GitHub Pages 프론트엔드 + Railway 백엔드**입니다.
 
-## 구성
-
+```text
+[GitHub Pages]
+    React/Vite/PWA 정적 파일
+        |
+        | VITE_API_BASE
+        v
+[Railway]
+    FastAPI 백엔드 + portfolio.json + history.db
 ```
-[Cloudflare Pages 또는 Vercel]   ← 프론트엔드 (정적, 무료)
-        │
-        ▼ fetch
-[Render.com 무료 web service]    ← FastAPI 백엔드
+
+## 1. 백엔드: Railway
+
+### 1-1. Railway 프로젝트 준비
+
+1. Railway에서 새 프로젝트를 만듭니다.
+2. 이 GitHub 저장소를 연결합니다.
+3. 서비스 루트는 저장소 루트 그대로 둡니다.
+4. `railway.json`과 `nixpacks.toml`의 start command가 `backend/main.py`를 실행합니다.
+
+### 1-2. 필수 환경변수
+
+```text
+PORTFOLIO_JSON_B64=<portfolio.json을 base64로 인코딩한 값>
+ALLOWED_ORIGINS=https://lmsnism-ux.github.io
+TZ=Asia/Seoul
 ```
 
----
+쓰기 기능을 외부에서도 사용할 경우 다음 값도 설정합니다.
 
-## 1. 백엔드 — Render.com
+```text
+PORTFOLIO_API_KEY=<원하는 긴 키>
+```
 
-### 1-1. portfolio.json을 base64로 변환 (시드용)
+프론트엔드 우상단 메뉴의 API 키 설정에 같은 값을 저장하면 편집/갱신 API를 사용할 수 있습니다.
 
-PC에서:
+### 1-3. 데이터 영속화 권장
+
+기본 파일은 백엔드 실행 디렉터리에 저장됩니다.
+
+- `portfolio.json`
+- `history.db`
+- `price_cache.json`
+- `backups/`
+
+장기 운영에서는 Railway Volume을 붙이고 아래 환경변수를 지정하는 구성을 권장합니다.
+
+```text
+PORTFOLIO_DATA_DIR=/data
+```
+
+Volume이 없으면 재배포/재기동 시 파일이 사라질 수 있습니다. 이 경우 `PORTFOLIO_JSON_B64`로 초기 데이터는 복구되지만, 체결 기록과 히스토리 DB는 유지되지 않습니다.
+
+### 1-4. GitHub Actions 배포
+
+`.github/workflows/deploy-backend.yml`은 `main` 브랜치에 백엔드 관련 변경이 push되면 Railway CLI로 배포합니다.
+
+GitHub Secrets에 아래 값을 등록해야 합니다.
+
+```text
+RAILWAY_TOKEN
+RAILWAY_SERVICE_ID
+```
+
+수동 배포도 가능합니다.
 
 ```bash
-cd /Users/sharn/portfolio-dashboard/backend
-base64 -i portfolio.json | pbcopy    # 클립보드에 복사 (macOS)
-# 또는
-base64 -i portfolio.json
+npm i -g @railway/cli
+railway login
+railway up --service <service-id> --detach
 ```
 
-### 1-2. Render 가입 후 GitHub 연결
+## 2. 프론트엔드: GitHub Pages
 
-1. https://render.com 가입 (GitHub 로그인 권장)
-2. 이 프로젝트를 GitHub repo에 push
-3. Render 대시보드 → **New → Blueprint** → 이 repo 선택 → `render.yaml` 자동 인식
-4. 환경변수 입력:
-   - `PORTFOLIO_JSON_B64`: 위 base64 문자열 붙여넣기
-   - `ALLOWED_ORIGINS`: 프론트 도메인 (예: `https://my-portfolio.pages.dev`) — 1-3 끝나고 입력
+### 2-1. GitHub Pages 설정
 
-5. **Deploy** 클릭 → ~3분
+저장소 Settings → Pages에서 Source를 **GitHub Actions**로 설정합니다.
 
-### 1-3. 백엔드 URL 확보
+### 2-2. 필수 Secret
 
-Render가 부여한 URL (예: `https://portfolio-dashboard-api.onrender.com`)을 메모.
+GitHub Secrets에 운영 백엔드 주소를 등록합니다.
 
-브라우저로 `<URL>/api/health` 열어서 `{"status":"ok"}` 확인.
+```text
+VITE_API_BASE=https://<your-railway-service>.up.railway.app
+```
 
-### 1-4. 자동 슬립 대응 (무료 tier)
+`.github/workflows/deploy.yml`은 빌드 시 아래 값을 사용합니다.
 
-Render 무료는 **15분 무요청 시 슬립**(첫 호출 30초 콜드스타트).
-- 깨우려면: GitHub Actions cron으로 5분마다 ping하거나
-- UptimeRobot.com 무료 등록 — 5분 간격 health check (가장 쉬움)
+```text
+VITE_BASE_PATH=/portfolio-dashboard/
+```
 
----
+### 2-3. 배포 확인
 
-## 2. 프론트엔드 — Cloudflare Pages
+```text
+https://lmsnism-ux.github.io/portfolio-dashboard/
+```
 
-### 2-1. 프론트 빌드
+확인할 항목:
+
+- 첫 화면 총자산이 표시되는지
+- `/api/portfolio` 데이터가 반영되는지
+- 가격 갱신 버튼이 API 키 설정 후 동작하는지
+- PWA 설치 후 모바일 홈 화면에서 열리는지
+
+## 3. 품질 체크
+
+`.github/workflows/quality.yml`은 push, pull request, 수동 실행에서 아래 검증을 수행합니다.
 
 ```bash
-cd /Users/sharn/portfolio-dashboard/frontend
-echo "VITE_API_BASE=https://portfolio-dashboard-api.onrender.com" > .env.production
+cd frontend
+npm ci
+npm run lint
 npm run build
+cd ..
+python -m unittest discover -s backend/tests
 ```
 
-### 2-2. Cloudflare Pages 배포
+로컬에서도 같은 명령으로 배포 전 확인할 수 있습니다.
 
-1. https://dash.cloudflare.com → Pages → **Create application → Connect to Git**
-2. repo 선택 → 빌드 설정:
-   - Build command: `npm run build`
-   - Output: `dist`
-   - Root: `frontend`
-   - 환경변수: `VITE_API_BASE` = 1-3에서 메모한 URL
+## 4. 운영 메모
 
-3. 배포 → `https://<프로젝트>.pages.dev` 부여
-
-### 2-3. Render `ALLOWED_ORIGINS` 갱신
-
-Render 대시보드 → portfolio-dashboard-api → Environment →
-`ALLOWED_ORIGINS=https://<프로젝트>.pages.dev` 저장 → 자동 재배포.
-
-### 2-4. 모바일에서 홈 화면에 추가
-
-iOS Safari로 `https://<프로젝트>.pages.dev` 접속 → 공유 → 홈 화면에 추가.
-**PWA 캐시 덕분에 데이터 갱신 없이도 마지막 캐시 화면이 즉시 뜸**.
-
----
-
-## 한계 (꼭 알아두세요)
-
-### ⚠️ Render 무료는 disk가 없음
-
-→ portfolio.json을 PATCH로 수정해도 **재배포/재기동 시 환경변수의 base64로 되돌아갑니다.**
-
-권장 운영:
-- **편집은 PC(LAN)에서 수행** → portfolio.json이 git에 commit/push되거나 base64를 다시 환경변수에 붙여넣기
-- 배포본은 **읽기 전용**으로 사용
-
-영구 저장을 원하면 옵션:
-1. Render **Persistent Disk** ($1/mo 추가) — `render.yaml`에 `disk` 섹션 추가
-2. Cloudflare D1 / Supabase 등 외부 DB로 portfolio 이전 (큰 작업)
-3. Fly.io 무료 tier + Volume (재배포 필요)
-
-### ⚠️ history.db도 휘발
-
-`/api/history` 데이터는 매 콜드스타트 후 backfill이 자동 실행되어 30일분이 복구됩니다.
-즉, 다시 보일 때 약 1~2분 지연.
-
----
-
-## 빠른 점검 체크리스트
-
-- [ ] `https://<백엔드>/api/health` → `{"status":"ok"}`
-- [ ] `https://<백엔드>/api/portfolio` → JSON 응답
-- [ ] `https://<프론트>` → 토스 디자인 로딩
-- [ ] `https://<프론트>` 에서 데이터 표시
-- [ ] 모바일 홈 화면 추가 후 풀스크린 동작
-- [ ] WiFi 끄고 LTE에서도 접속 가능
+- 가격/환율은 외부 웹/API에 의존하므로 일시적으로 지수 카드가 비어 있을 수 있습니다. 프론트는 이 경우 `지수 연결 확인` 상태를 보여줍니다.
+- Render 배포 파일(`render.yaml`)은 대안 배포용으로 남겨둘 수 있지만, 현재 자동 배포 기준은 Railway입니다.
+- `start.sh`는 macOS/Linux 로컬 실행 보조 스크립트입니다. Windows에서는 README의 PowerShell 명령을 사용하세요.

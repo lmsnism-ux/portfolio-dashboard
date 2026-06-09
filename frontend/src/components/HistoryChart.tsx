@@ -22,7 +22,17 @@ interface Props {
   hideAssets: boolean;
 }
 
-const ToolTipBox = ({ active, payload, hideAssets }: any) => {
+interface TooltipPayload<T> {
+  payload: T;
+}
+
+interface ToolTipBoxProps {
+  active?: boolean;
+  payload?: TooltipPayload<HistoryPoint>[];
+  hideAssets: boolean;
+}
+
+const ToolTipBox = ({ active, payload, hideAssets }: ToolTipBoxProps) => {
   if (!active || !payload?.length) return null;
   const p: HistoryPoint = payload[0].payload;
   return (
@@ -429,7 +439,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
             const isPos = diff >= 0;
             const stroke = isPos ? '#F04452' : '#5B9CF6';
             return (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={filtered} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">

@@ -110,6 +110,7 @@ function MarketStatusCard({
   indexChange,
   indexChangePct,
   sparkData,
+  indexLoading,
   onClick,
 }: {
   exchange: Exchange;
@@ -118,6 +119,7 @@ function MarketStatusCard({
   indexChange: number | null;       // 전일 대비 변동 포인트 (예: +12.3)
   indexChangePct: number | null;    // 전일 대비 변동률 (%)
   sparkData?: number[];
+  indexLoading?: boolean;
   onClick?: () => void;
 }) {
   const status = getMarketStatus(exchange);
@@ -170,7 +172,12 @@ function MarketStatusCard({
               )}
             </>
           ) : (
-            <p className="num text-[16px] font-bold text-toss-text-tertiary">-</p>
+            <div>
+              <p className="num text-[16px] font-bold text-toss-text-tertiary">-</p>
+              <p className="text-[10px] text-toss-text-tertiary mt-0.5">
+                {indexLoading ? '불러오는 중' : '지수 연결 확인'}
+              </p>
+            </div>
           )}
         </div>
         {sparkData && sparkData.length >= 2 && indexChange !== null && (
@@ -346,7 +353,7 @@ export default function Header({
   });
 
   // 실제 지수 (코스피·나스닥) 현재가 + 전일 대비. 5분마다 갱신.
-  const { data: indices } = useQuery({
+  const { data: indices, isLoading: indicesLoading } = useQuery({
     queryKey: ['indices'],
     queryFn: fetchMarketIndices,
     staleTime: 5 * 60 * 1000,
@@ -355,7 +362,7 @@ export default function Header({
 
   // 우상단 메뉴 + 시장 현황 collapse + API 키/알림 모달
   const [menuOpen, setMenuOpen] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(() => localStorage.getItem('pd_market_open') !== '0');
+  const [marketOpen, setMarketOpen] = useState(() => localStorage.getItem('pd_market_open') === '1');
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -427,7 +434,8 @@ export default function Header({
   const toggleDraftHidden = (name: string) => {
     setDraftHidden(prev => {
       const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   };
@@ -741,6 +749,7 @@ export default function Header({
                   indexValue={indices?.korea?.value ?? null}
                   indexChange={indices?.korea?.change ?? null}
                   indexChangePct={indices?.korea?.change_pct ?? null}
+                  indexLoading={indicesLoading}
                   sparkData={sparklines?.korea}
                   onClick={indices?.korea?.value ? () => setIndexChart({
                     ticker: '^KS11',
@@ -756,6 +765,7 @@ export default function Header({
                   indexValue={indices?.nasdaq?.value ?? null}
                   indexChange={indices?.nasdaq?.change ?? null}
                   indexChangePct={indices?.nasdaq?.change_pct ?? null}
+                  indexLoading={indicesLoading}
                   sparkData={sparklines?.nasdaq}
                   onClick={indices?.nasdaq?.value ? () => setIndexChart({
                     ticker: '^IXIC',

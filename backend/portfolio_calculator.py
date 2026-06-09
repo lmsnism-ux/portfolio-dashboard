@@ -1,7 +1,6 @@
 """포트폴리오 계산 로직"""
 from __future__ import annotations
 import base64
-import fcntl
 import json
 import logging
 import os
@@ -11,6 +10,11 @@ import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # Windows local development
+    fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +52,16 @@ def save_portfolio(portfolio: dict) -> None:
         # 원자적 쓰기: tmp 파일 → fsync → rename
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(_DATA_DIR), prefix=".portfolio_", suffix=".tmp")
         try:
-            with os.fdopen(tmp_fd, "w") as f:
-                # fcntl 락 (LOCK_EX = 배타 잠금)
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                if fcntl is not None:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 try:
                     json.dump(portfolio, f, ensure_ascii=False, indent=2)
                     f.flush()
                     os.fsync(f.fileno())
                 finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    if fcntl is not None:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             os.replace(tmp_path, PORTFOLIO_FILE)
         except Exception:
             try:
@@ -90,7 +95,7 @@ def _seed_from_env() -> bool:
     try:
         raw = base64.b64decode(encoded).decode("utf-8")
         json.loads(raw)  # JSON 유효성 확인
-        PORTFOLIO_FILE.write_text(raw)
+        PORTFOLIO_FILE.write_text(raw, encoding="utf-8")
         logger.info("_seed_from_env: portfolio.json 초기 시드 완료")
         return True
     except Exception as e:
@@ -102,7 +107,11 @@ def load_portfolio() -> dict:
     _seed_from_env()  # 항상 env var와 동기화 (내용이 같으면 내부에서 스킵)
     if not PORTFOLIO_FILE.exists():
         return {"accounts": []}
-    return json.loads(PORTFOLIO_FILE.read_text())
+    return json.loads(PORTFOLIO_FILE.read_text(encoding="utf-8"))
+
+
+def _fmt_md(dt: datetime) -> str:
+    return f"{dt.month}/{dt.day}"
 
 def _get_price(ticker, prices: dict, usd_krw: float) -> dict:
     """티커에 대한 가격 정보 반환"""
@@ -131,7 +140,7 @@ def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
         # 미국 영업일: 한국시간 22시 이후면 다음날부터
         while nxt.weekday() >= 5 or (nxt.date() == now.date() and now.hour >= 22):
             nxt = nxt + timedelta(days=1)
-        label = "오늘" if nxt.date() == now.date() else nxt.strftime("%-m/%-d")
+        label = "오늘" if nxt.date() == now.date() else _fmt_md(nxt)
         return label, nxt
 
     if frequency == "weekly_monday":
@@ -139,7 +148,7 @@ def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
         nxt = now + timedelta(days=days)
         if now.weekday() == 0:
             return "오늘 (월요일)", now
-        return ("다음 월요일" if days == 7 else f"{nxt.strftime('%-m/%-d')} (월)"), nxt
+        return ("다음 월요일" if days == 7 else f"{_fmt_md(nxt)} (월)"), nxt
 
     if frequency == "weekly_friday":
         target = 4  # Friday
@@ -147,7 +156,7 @@ def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
         nxt = now + timedelta(days=days)
         if now.weekday() == target:
             return "오늘 (금요일)", now
-        return f"{nxt.strftime('%-m/%-d')} (금)", nxt
+        return f"{_fmt_md(nxt)} (금)", nxt
 
     if frequency == "monthly_first":
         # 다음 달 1일 (이번 달 1일이 지났으면)
@@ -157,7 +166,7 @@ def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
             nxt = now.replace(year=now.year + 1, month=1, day=1)
         else:
             nxt = now.replace(month=now.month + 1, day=1)
-        return f"{nxt.strftime('%-m/%-d')} (1일)", nxt
+        return f"{_fmt_md(nxt)} (1일)", nxt
 
     if frequency == "monthly_last":
         # 이번 달 말일
@@ -173,8 +182,8 @@ def _next_buy_date(frequency: str, now: datetime) -> tuple[str, datetime]:
                 nxt = last_day.replace(year=last_day.year + 1, month=1, day=1) - timedelta(days=1)
             else:
                 nxt = last_day.replace(month=last_day.month + 1, day=1) - timedelta(days=1)
-            return f"{nxt.strftime('%-m/%-d')} (말일)", nxt
-        return f"{last_day.strftime('%-m/%-d')} (말일)", last_day
+            return f"{_fmt_md(nxt)} (말일)", nxt
+        return f"{_fmt_md(last_day)} (말일)", last_day
 
     return "정의되지 않음", now
 
@@ -642,7 +651,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         d = now_kst
         while d.weekday() >= 5:
             d = d - timedelta(days=1)
-        day_change_label_date = d.strftime("%-m/%-d")
+        day_change_label_date = _fmt_md(d)
         day_change_label = f"{day_change_label_date} 등락"
     else:
         day_change_label = "오늘 등락"

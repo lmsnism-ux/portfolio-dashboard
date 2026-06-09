@@ -16,7 +16,27 @@ interface Props {
   hideAssets: boolean;
 }
 
-const ToolTipBox = ({ active, payload, hideAssets }: any) => {
+interface BarItem {
+  name: string;
+  ticker: string;
+  weight: number;
+  value: number;
+  fill: string;
+  profit_krw: number | null;
+  profit_pct: number | null;
+}
+
+interface TooltipPayload<T> {
+  payload: T;
+}
+
+interface ToolTipBoxProps {
+  active?: boolean;
+  payload?: TooltipPayload<BarItem>[];
+  hideAssets: boolean;
+}
+
+const ToolTipBox = ({ active, payload, hideAssets }: ToolTipBoxProps) => {
   if (!active || !payload?.length) return null;
   const item = payload[0].payload;
   return (
@@ -76,7 +96,7 @@ export default function HoldingsBar({ data, hideAssets }: Props) {
       <h3 className="text-xs font-semibold text-toss-text-secondary mb-3">
         종목별 비중 (상위 {items.length})
       </h3>
-      <ResponsiveContainer width="100%" height={barH}>
+      <ResponsiveContainer width="100%" height={barH} minWidth={0}>
         <BarChart
           data={items}
           layout="vertical"
@@ -100,8 +120,7 @@ export default function HoldingsBar({ data, hideAssets }: Props) {
               position: 'right',
               fontSize: 10,
               fill: 'var(--color-toss-text-tertiary)',
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter: (v: any) => v != null ? `${Number(v).toFixed(1)}%` : '',
+              formatter: (v) => v != null && v !== false ? `${Number(v).toFixed(1)}%` : '',
             }}
           >
             {items.map((item, i) => (

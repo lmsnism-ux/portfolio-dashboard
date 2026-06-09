@@ -12,6 +12,9 @@ interface Props {
 }
 
 type Side = 'buy' | 'sell';
+type TradePreview =
+  | { kind: 'valid'; newShares: number; newAvg: number }
+  | { kind: 'error'; error: string };
 
 /**
  * 매수: 새 평단가 = (기존_수량 × 기존_평단가 + 체결_수량 × 체결가) / (기존_수량 + 체결_수량)
@@ -45,7 +48,7 @@ export default function TradeModal({ account, holding, onClose }: Props) {
     };
   }, [onClose]);
 
-  const preview = useMemo(() => {
+  const preview = useMemo<TradePreview | null>(() => {
     const q = parseFloat(qty);
     const p = parseFloat(price);
     if (!Number.isFinite(q) || q <= 0) return null;
@@ -56,16 +59,19 @@ export default function TradeModal({ account, holding, onClose }: Props) {
       if (!Number.isFinite(p) || p <= 0) return null;
       const newShares = oldShares + q;
       const newAvg = (oldShares * oldAvg + q * p) / newShares;
-      return { newShares, newAvg };
+      return { kind: 'valid', newShares, newAvg };
     } else {
-      if (q > oldShares) return { error: `매도 수량이 보유 수량(${oldShares})보다 큽니다` };
+      if (q > oldShares) return { kind: 'error', error: `매도 수량이 보유 수량(${oldShares})보다 큽니다` };
       const newShares = oldShares - q;
-      return { newShares, newAvg: oldAvg };
+      return { kind: 'valid', newShares, newAvg: oldAvg };
     }
   }, [qty, price, side, holding]);
 
+  const previewError = preview?.kind === 'error' ? preview.error : null;
+  const validPreview = preview?.kind === 'valid' ? preview : null;
+
   const save = () => {
-    if (!preview || (preview as any).error) return;
+    if (!validPreview) return;
     const q = parseFloat(qty);
     const p = parseFloat(price);
     mutation.mutate({
@@ -168,17 +174,17 @@ export default function TradeModal({ account, holding, onClose }: Props) {
             </Field>
           )}
 
-          {preview && (preview as any).error && (
-            <p className="text-xs text-toss-up">{(preview as any).error}</p>
+          {previewError && (
+            <p className="text-xs text-toss-up">{previewError}</p>
           )}
 
-          {preview && !(preview as any).error && (
+          {validPreview && (
             <div className="bg-toss-blue-soft rounded-2xl p-4">
               <p className="text-xs text-toss-text-secondary mb-2">체결 후</p>
               <div className="flex justify-between mb-1">
                 <span className="text-xs text-toss-text-tertiary">새 보유수량</span>
                 <span className="num text-sm font-semibold text-toss-text-primary">
-                  {(preview as any).newShares.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}주
+                  {validPreview.newShares.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}주
                 </span>
               </div>
               {side === 'buy' && (
@@ -186,7 +192,7 @@ export default function TradeModal({ account, holding, onClose }: Props) {
                   <span className="text-xs text-toss-text-tertiary">새 평단가 (가중평균)</span>
                   <span className="num text-sm font-semibold text-toss-text-primary">
                     {isUsd ? '$' : '₩'}
-                    {(preview as any).newAvg.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}
+                    {validPreview.newAvg.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}
                   </span>
                 </div>
               )}
@@ -207,7 +213,7 @@ export default function TradeModal({ account, holding, onClose }: Props) {
           </button>
           <button
             onClick={save}
-            disabled={mutation.isPending || !preview || !!(preview as any).error}
+            disabled={mutation.isPending || !validPreview}
             className={`flex-[2] py-3 rounded-xl text-white font-semibold disabled:opacity-50 active:scale-[0.98] ${
               side === 'buy' ? 'bg-toss-up' : 'bg-toss-down'
             }`}

@@ -5,6 +5,7 @@
 from __future__ import annotations
 import os
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -43,35 +44,36 @@ def record_snapshot_from_summary(summary: dict) -> None:
     invest_profit_pct = (
         round(invest_profit / invest_cost * 100, 2) if invest_cost > 0 else None
     )
-    with _conn() as c:
-        c.execute(
-            """
-            INSERT INTO portfolio_snapshots
-                (snapshot_date, total_value_krw, total_cost_krw, total_profit_krw, total_profit_pct, usd_krw, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(snapshot_date) DO UPDATE SET
-                total_value_krw = excluded.total_value_krw,
-                total_cost_krw = excluded.total_cost_krw,
-                total_profit_krw = excluded.total_profit_krw,
-                total_profit_pct = excluded.total_profit_pct,
-                usd_krw = excluded.usd_krw,
-                recorded_at = excluded.recorded_at
-            """,
-            (
-                today,
-                invest_value,
-                invest_cost,
-                invest_profit,
-                invest_profit_pct,
-                summary.get("usd_krw"),
-                datetime.now(KST).isoformat(),
-            ),
-        )
+    with closing(_conn()) as c:
+        with c:
+            c.execute(
+                """
+                INSERT INTO portfolio_snapshots
+                    (snapshot_date, total_value_krw, total_cost_krw, total_profit_krw, total_profit_pct, usd_krw, recorded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(snapshot_date) DO UPDATE SET
+                    total_value_krw = excluded.total_value_krw,
+                    total_cost_krw = excluded.total_cost_krw,
+                    total_profit_krw = excluded.total_profit_krw,
+                    total_profit_pct = excluded.total_profit_pct,
+                    usd_krw = excluded.usd_krw,
+                    recorded_at = excluded.recorded_at
+                """,
+                (
+                    today,
+                    invest_value,
+                    invest_cost,
+                    invest_profit,
+                    invest_profit_pct,
+                    summary.get("usd_krw"),
+                    datetime.now(KST).isoformat(),
+                ),
+            )
 
 
 def get_history(days: int = 365) -> list[dict]:
     cutoff = (datetime.now(KST).date() - timedelta(days=days)).isoformat()
-    with _conn() as c:
+    with closing(_conn()) as c:
         rows = c.execute(
             """
             SELECT snapshot_date, total_value_krw, total_cost_krw,

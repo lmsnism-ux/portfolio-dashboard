@@ -8,6 +8,7 @@
 from __future__ import annotations
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -62,28 +63,29 @@ def insert_trade(
     now_iso = datetime.now(KST).isoformat()
     if not traded_at:
         traded_at = now_iso
-    with _conn() as c:
-        cur = c.execute(
-            """
-            INSERT INTO trades
-                (account_name, holding_key, name, ticker, side, shares, price, currency, traded_at, recorded_at, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                account_name,
-                holding_key,
-                name,
-                ticker,
-                side,
-                float(shares),
-                float(price) if price is not None else None,
-                currency,
-                traded_at,
-                now_iso,
-                note,
-            ),
-        )
-        return cur.lastrowid or 0
+    with closing(_conn()) as c:
+        with c:
+            cur = c.execute(
+                """
+                INSERT INTO trades
+                    (account_name, holding_key, name, ticker, side, shares, price, currency, traded_at, recorded_at, note)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    account_name,
+                    holding_key,
+                    name,
+                    ticker,
+                    side,
+                    float(shares),
+                    float(price) if price is not None else None,
+                    currency,
+                    traded_at,
+                    now_iso,
+                    note,
+                ),
+            )
+            return cur.lastrowid or 0
 
 
 def list_trades(
@@ -102,7 +104,7 @@ def list_trades(
         params.append(holding_key)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     params.append(limit)
-    with _conn() as c:
+    with closing(_conn()) as c:
         rows = c.execute(
             f"""
             SELECT id, account_name, holding_key, name, ticker, side,
@@ -134,9 +136,10 @@ def list_trades(
 
 
 def delete_trade(trade_id: int) -> bool:
-    with _conn() as c:
-        cur = c.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
-        return cur.rowcount > 0
+    with closing(_conn()) as c:
+        with c:
+            cur = c.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
+            return cur.rowcount > 0
 
 
 def aggregate_for_holding(account_name: str, holding_key: str) -> dict:
