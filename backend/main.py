@@ -52,10 +52,23 @@ async def lifespan(app: FastAPI):
 
     # 7분마다 자동 갱신
     scheduler.add_job(refresh_all_prices, "interval", minutes=7, id="price_refresh")
-    # 매일 00:30 KST에 backfill 재실행 (당일 종가 반영)
-    scheduler.add_job(lambda: backfill_history(days=7), "cron", hour=0, minute=30, id="daily_backfill")
+
+    # 스냅샷 시점 정규화 (KST):
+    # 기존 00:30 단일 backfill은 어느 시장 마감과도 무관한 시각이라, 사용자
+    # 호출 시각에 따라 스냅샷 시점이 비균질했다. 시장 마감 직후 두 번 적재해
+    # '한국장 마감 종가' / '미국장 마감 종가'를 모두 반영하도록 변경.
+    # KST 16:30 — 한국장 마감(15:30) 직후. 그날 한국 종가 확정.
+    scheduler.add_job(
+        lambda: backfill_history(days=2),
+        "cron", hour=16, minute=30, timezone="Asia/Seoul", id="kr_close_snapshot",
+    )
+    # KST 06:30 — 미국장 마감(EST/EDT 16:00 ≈ KST 05:00~06:00) 직후. 미국 종가 반영.
+    scheduler.add_job(
+        lambda: backfill_history(days=2),
+        "cron", hour=6, minute=30, timezone="Asia/Seoul", id="us_close_snapshot",
+    )
     scheduler.start()
-    logger.info("스케줄러 시작 (7분 갱신 + 매일 backfill)")
+    logger.info("스케줄러 시작 (7분 갱신 + 한국·미국 마감 backfill 2회)")
 
     yield
 
