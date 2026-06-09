@@ -1,15 +1,16 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { RotateCcw, CalendarDays } from 'lucide-react';
+import { RotateCcw, CalendarDays, Info } from 'lucide-react';
 import { fetchHistory, triggerBackfill } from '../api';
-import { fmtKRW, fmtPct, colorClass } from '../utils';
+import { fmtKRW, fmtPct, colorClass, applyDisplayToggles } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
-type Range = 'TODAY' | 'CM' | 'PM' | '3M' | 'YTD' | 'ALL' | 'CUSTOM';
+type Range = 'WEEK' | 'CM' | 'PM' | '3M' | 'YTD' | 'ALL' | 'CUSTOM';
 
 const RANGES: { key: Range; label: string; days: number }[] = [
-  { key: 'TODAY', label: '오늘', days: 1 },
+  // 'WEEK' = 이번주 월요일 ~ 오늘 (이전엔 'TODAY'였으나 실제 의미는 "이번주 누적")
+  { key: 'WEEK', label: '이번주', days: 7 },
   { key: 'CM', label: '당월', days: 0 },
   { key: 'PM', label: '전월', days: 0 },
   { key: '3M', label: '3개월', days: 92 },
@@ -20,6 +21,10 @@ const RANGES: { key: Range; label: string; days: number }[] = [
 interface Props {
   data: PortfolioSummary;
   hideAssets: boolean;
+  /** Header와 동일한 토글 상태 — MiniStat이 표시값을 일치시키기 위해 필요 */
+  dcOn: boolean;
+  realEstateOn: boolean;
+  loanOn: boolean;
 }
 
 interface TooltipPayload<T> {
@@ -56,11 +61,16 @@ interface MiniStatProps {
   diff: number | null;
   pct: number | null;
   hideAssets: boolean;
+  /** 사용자 호버용 짧은 설명 — 데이터 소스/계산 기준 명시 */
+  hint?: string;
 }
 
-const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
-  <div className="bg-toss-bg rounded-2xl p-3.5">
-    <p className="text-[10px] font-medium text-toss-text-tertiary tracking-wide uppercase mb-2">{label}</p>
+const MiniStat = ({ label, diff, pct, hideAssets, hint }: MiniStatProps) => (
+  <div className="bg-toss-bg rounded-2xl p-3.5" title={hint}>
+    <div className="flex items-center gap-1 mb-2">
+      <p className="text-[10px] font-medium text-toss-text-tertiary tracking-wide uppercase">{label}</p>
+      {hint && <Info size={9} className="text-toss-text-tertiary/60" />}
+    </div>
     {diff !== null ? (
       <>
         <p className={`num text-[15px] font-bold leading-tight ${colorClass(diff)}`}>
@@ -78,8 +88,8 @@ const MiniStat = ({ label, diff, pct, hideAssets }: MiniStatProps) => (
 
 function getRangeCutoff(key: Range, customFrom: string, customTo: string): { from: Date | null; to: Date | null } {
   const now = new Date();
-  if (key === 'TODAY') {
-    // 이번주 월요일부터 오늘까지
+  if (key === 'WEEK') {
+    // 이번주 월요일부터 오늘까지 (누적 변동)
     const dow = now.getDay();
     const daysFromMon = dow === 0 ? 6 : dow - 1;
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysFromMon);
@@ -106,9 +116,15 @@ function getRangeCutoff(key: Range, customFrom: string, customTo: string): { fro
   return { from: new Date(now.getTime() - r.days * 86400000), to: null };
 }
 
-export default function HistoryChart({ data, hideAssets }: Props) {
-  const [range, setRange] = useState<Range>('TODAY');
+export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loanOn }: Props) {
+  const [range, setRange] = useState<Range>('WEEK');
   const [showCustom, setShowCustom] = useState(false);
+
+  // Header와 동일 기준으로 표시값 계산 — MiniStat 4칸이 토글을 따르도록 일관성 확보
+  const display = useMemo(
+    () => applyDisplayToggles(data, { dcOn, realEstateOn, loanOn }),
+    [data, dcOn, realEstateOn, loanOn],
+  );
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const queryClient = useQueryClient();
@@ -133,8 +149,8 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     const earliest = items[0].date;
     RANGES.forEach(r => {
       if (r.key === 'ALL' || r.key === 'CUSTOM') { result[r.key] = 'full'; return; }
-      if (r.key === 'TODAY') {
-        const { from: mon } = getRangeCutoff('TODAY', '', '');
+      if (r.key === 'WEEK') {
+        const { from: mon } = getRangeCutoff('WEEK', '', '');
         const monStr = mon!.toISOString().slice(0, 10);
         result[r.key] = earliest <= monStr ? 'full' : 'no-extra';
         return;
@@ -193,7 +209,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
   }, [items]);
 
   const RANGE_LABEL: Partial<Record<Range, string>> = {
-    TODAY: '오늘', CM: '당월', PM: '전월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
+    WEEK: '이번주', CM: '당월', PM: '전월', '3M': '3개월', YTD: '올해', ALL: '전체', CUSTOM: '선택 기간',
   };
 
   // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시
@@ -241,21 +257,50 @@ export default function HistoryChart({ data, hideAssets }: Props) {
     <section className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden">
       {/* 투자 수익 요약 */}
       <div className="px-5 pt-5 pb-4 border-b border-toss-border">
-        <p className="text-[11px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-3">
-          투자 수익 확인
-        </p>
+        <div className="flex items-center gap-1.5 mb-3">
+          <p className="text-[11px] font-semibold text-toss-text-tertiary tracking-widest uppercase">
+            투자 수익 확인
+          </p>
+          <span
+            className="text-[9px] text-toss-text-tertiary/70 inline-flex items-center gap-0.5"
+            title="‘오늘’은 직전 영업일 종가 대비 실시간 등락이고, ‘이번달/올해’는 일별 스냅샷 차이입니다. 측정 기준이 달라 같은 날 다른 값일 수 있어요."
+          >
+            <Info size={9} />
+            <span>측정 기준</span>
+          </span>
+        </div>
         {(() => {
-          const reProfit = (data.real_estate_equity_krw ?? 0) - (data.real_estate_cost_krw ?? 0);
-          const investCost = data.total_cost_krw - (data.real_estate_cost_krw ?? 0);
-          const investProfit = data.total_profit_krw - reProfit;
-          const investProfitPct = investCost > 0 ? (investProfit / investCost * 100) : null;
           return (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <MiniStat label="오늘" diff={data.total_day_change_krw} pct={data.total_day_change_pct} hideAssets={hideAssets} />
-                <MiniStat label="이번달" diff={profitStats?.monthDiff ?? null} pct={profitStats?.monthPct ?? null} hideAssets={hideAssets} />
-                <MiniStat label="올해" diff={profitStats?.yearDiff ?? null} pct={profitStats?.yearPct ?? null} hideAssets={hideAssets} />
-                <MiniStat label="누적 수익" diff={investProfit} pct={investProfitPct} hideAssets={hideAssets} />
+                <MiniStat
+                  label="오늘"
+                  diff={display.dayChg}
+                  pct={display.dayPct}
+                  hideAssets={hideAssets}
+                  hint="직전 영업일 종가 대비 실시간 변동 (보유 종목 + 환율). 토글 적용."
+                />
+                <MiniStat
+                  label="이번달"
+                  diff={profitStats?.monthDiff ?? null}
+                  pct={profitStats?.monthPct ?? null}
+                  hideAssets={hideAssets}
+                  hint="이번달 첫 영업일 스냅샷 대비 마지막 스냅샷. 일별 1회 기록값 비교."
+                />
+                <MiniStat
+                  label="올해"
+                  diff={profitStats?.yearDiff ?? null}
+                  pct={profitStats?.yearPct ?? null}
+                  hideAssets={hideAssets}
+                  hint="올해 첫 영업일 스냅샷 대비 마지막 스냅샷."
+                />
+                <MiniStat
+                  label="누적 수익"
+                  diff={display.profit}
+                  pct={display.profitPct}
+                  hideAssets={hideAssets}
+                  hint="현재 평가가치 − 매입 원가. 토글(퇴직연금/부동산/대출) 적용."
+                />
               </div>
               {annualStats.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-toss-border/50">
@@ -303,25 +348,24 @@ export default function HistoryChart({ data, hideAssets }: Props) {
                   {fmtPct(periodChange.pct)}
                 </span>
               </div>
-            ) : range === 'TODAY' ? (
+            ) : range === 'WEEK' ? (
+              // 이번주 스냅샷이 1개뿐(=월요일=오늘)인 초기 상태에선 백엔드 실시간 day_change로 폴백
               <div className="flex items-baseline gap-2">
-                <span className={`num text-2xl font-extrabold tracking-tight ${colorClass(data.total_day_change_krw)}`}>
-                  {data.total_day_change_krw >= 0 ? '+' : ''}
-                  {hideAssets ? '••••••' : fmtKRW(data.total_day_change_krw)}
+                <span className={`num text-2xl font-extrabold tracking-tight ${colorClass(display.dayChg)}`}>
+                  {display.dayChg >= 0 ? '+' : ''}
+                  {hideAssets ? '••••••' : fmtKRW(display.dayChg)}
                 </span>
-                {data.total_day_change_pct !== null && (
-                  <span className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
-                    data.total_day_change_pct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
-                  }`}>
-                    {fmtPct(data.total_day_change_pct)}
-                  </span>
-                )}
+                <span className={`num text-xs font-bold px-2 py-0.5 rounded-full ${
+                  display.dayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
+                }`}>
+                  {fmtPct(display.dayPct)}
+                </span>
               </div>
             ) : last ? (
               <p className="num text-sm text-toss-text-tertiary">현재 {hideAssets ? '••••' : fmtKRW(last.total_value_krw)}</p>
             ) : null}
-            {range === 'TODAY' ? (
-              <p className="text-[10px] text-toss-text-tertiary mt-1">이번주 추이</p>
+            {range === 'WEEK' ? (
+              <p className="text-[10px] text-toss-text-tertiary mt-1">월요일 ~ 오늘 누적 (일별 스냅샷)</p>
             ) : first && last && (
               <p className="text-[10px] text-toss-text-tertiary mt-1">
                 {first.date.slice(5)} ~ {last.date.slice(5)} ({filtered.length}일)
@@ -435,7 +479,7 @@ export default function HistoryChart({ data, hideAssets }: Props) {
             </div>
           ) : (() => {
             // 기간 손익 부호에 따라 색상 결정 (한국식: 상승=빨강, 하락=파랑)
-            const diff = periodChange?.diff ?? (range === 'TODAY' ? data.total_day_change_krw : 0);
+            const diff = periodChange?.diff ?? (range === 'WEEK' ? display.dayChg : 0);
             const isPos = diff >= 0;
             const stroke = isPos ? '#F04452' : '#5B9CF6';
             return (

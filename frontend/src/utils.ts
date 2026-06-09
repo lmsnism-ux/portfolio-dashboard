@@ -1,3 +1,53 @@
+import type { PortfolioSummary } from './types';
+
+/**
+ * 사용자 토글(퇴직연금/부동산/대출)을 적용한 표시값을 한 번에 계산한다.
+ * Header와 HistoryChart가 같은 기준의 "오늘 등락 / 누적 수익"을 보여주기 위한 공통 계산.
+ */
+export interface DisplayTotals {
+  total: number;          // 표시 총자산 (KRW)
+  dayChg: number;         // 표시 오늘 등락 (KRW) — 직전 영업일 종가 대비 실시간
+  dayPct: number;         // 표시 오늘 등락률 (%)
+  profit: number;         // 표시 누적 수익 (KRW)
+  profitPct: number;      // 표시 누적 수익률 (%)
+  investCost: number;     // 표시 누적 원가 (KRW)
+}
+
+export function applyDisplayToggles(
+  data: PortfolioSummary,
+  opts: { dcOn: boolean; realEstateOn: boolean; loanOn: boolean },
+): DisplayTotals {
+  const dcKrw    = data.dc_value_krw      ?? 0;
+  const dcDayChg = data.dc_day_change_krw ?? 0;
+  const dcProfit = (data.dc_value_krw ?? 0) - (data.dc_cost_krw ?? 0);
+  const dcCost   = data.dc_cost_krw       ?? 0;
+
+  const reEquityRaw = data.real_estate_equity_krw ?? 0;
+  const reCostRaw   = data.real_estate_cost_krw   ?? 0;
+  const reLoan      = data.real_estate_loan_krw   ?? 0;
+
+  let reAdjustValue = 0;
+  let reAdjustCost  = 0;
+  if (!opts.realEstateOn) {
+    reAdjustValue = -reEquityRaw;
+    reAdjustCost  = -reCostRaw;
+  } else if (!opts.loanOn) {
+    reAdjustValue = reLoan;
+    reAdjustCost  = reLoan;
+  }
+
+  const dcExclude  = opts.dcOn ? 0 : dcKrw;
+  const total      = data.total_value_krw - dcExclude + reAdjustValue;
+  const dayChg     = data.total_day_change_krw - (opts.dcOn ? 0 : dcDayChg);
+  const profit     = data.total_profit_krw - (opts.dcOn ? 0 : dcProfit) + (reAdjustValue - reAdjustCost);
+  const investCost = data.total_cost_krw - (opts.dcOn ? 0 : dcCost) + reAdjustCost;
+  const profitPct  = investCost > 0 ? (profit / investCost) * 100 : (data.total_profit_pct ?? 0);
+  const prevTotal  = total - dayChg;
+  const dayPct     = prevTotal > 0 ? (dayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
+
+  return { total, dayChg, dayPct, profit, profitPct, investCost };
+}
+
 export function fmtKRW(val: number): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '-';
   const abs = Math.abs(val);
