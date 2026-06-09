@@ -1,13 +1,11 @@
-name: Deploy Backend to Railway
+name: Deploy Backend to Render
 
 on:
   push:
     branches: [main]
     paths:
       - 'backend/**'
-      - 'requirements.txt'
-      - 'nixpacks.toml'
-      - 'railway.json'
+      - 'render.yaml'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
@@ -15,16 +13,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-
-      - name: Deploy to Railway
-        run: railway up --service "${{ secrets.RAILWAY_SERVICE_ID }}" --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Trigger Render Deploy Hook
+        run: |
+          curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}" | jq .
