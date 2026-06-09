@@ -30,14 +30,28 @@ async function writeFetch(url: string, init: RequestInit = {}): Promise<Response
   return res;
 }
 
+/**
+ * 자산 정보를 노출하는 GET 요청용. 백엔드가 READ_REQUIRE_AUTH=1로
+ * 켜져 있으면 X-API-Key가 필수 — 키가 저장돼 있으면 자동 부착한다.
+ * 키 미저장 + 401이면 API 키 설정을 안내.
+ */
+async function readFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = authHeaders((init.headers as Record<string, string>) ?? {});
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    throw new Error('인증이 필요해요. 우상단 ⓘ에서 API 키를 설정해주세요.');
+  }
+  return res;
+}
+
 export async function fetchPortfolio(): Promise<PortfolioSummary> {
-  const res = await fetch(`${BASE}/portfolio`);
+  const res = await readFetch(`${BASE}/portfolio`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function fetchHistory(days = 365): Promise<HistoryPoint[]> {
-  const res = await fetch(`${BASE}/history?days=${days}`);
+  const res = await readFetch(`${BASE}/history?days=${days}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const json = await res.json();
   return json.items as HistoryPoint[];
@@ -248,7 +262,7 @@ export async function fetchTrades(
   if (account_name) params.set('account_name', account_name);
   if (holding_key) params.set('holding_key', holding_key);
   params.set('limit', String(limit));
-  const res = await fetch(`${BASE}/trades?${params.toString()}`);
+  const res = await readFetch(`${BASE}/trades?${params.toString()}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }

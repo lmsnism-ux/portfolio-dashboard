@@ -81,20 +81,21 @@ _extra_origins = [
     o.strip() for o in (os.environ.get("ALLOWED_ORIGINS", "")).split(",") if o.strip()
 ]
 
-# API 인증: PORTFOLIO_API_KEY 환경변수가 설정되면 쓰기 작업에 X-API-Key 헤더 필요
+# API 인증
+# - PORTFOLIO_API_KEY: 설정되면 쓰기 엔드포인트에 X-API-Key 헤더 필수
+# - LAN_REQUIRE_AUTH=1: PORTFOLIO_API_KEY 미설정 시에도 사설망 자동 통과를 차단
+# - READ_REQUIRE_AUTH=1: /api/portfolio, /api/history 등 자산 정보를 노출하는
+#   읽기 엔드포인트에도 X-API-Key 요구 (외부 도메인 호스팅 시 권장)
 _API_KEY = os.environ.get("PORTFOLIO_API_KEY", "").strip()
 _LAN_AUTH_REQUIRED = os.environ.get("LAN_REQUIRE_AUTH", "0") == "1"
+_READ_REQUIRE_AUTH = os.environ.get("READ_REQUIRE_AUTH", "0") == "1"
 
 
-def require_api_key(
+def _check_api_key(
     request: Request,
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    x_api_key: Optional[str],
 ) -> None:
-    """쓰기 엔드포인트 보호.
-
-    - PORTFOLIO_API_KEY가 설정되어 있으면 헤더 필수
-    - 미설정 시: 사설망(LAN)에서만 통과 — 외부 도메인은 차단
-    """
+    """공통 인증 로직."""
     if _API_KEY:
         if x_api_key != _API_KEY:
             raise HTTPException(status_code=401, detail="invalid api key")
@@ -113,6 +114,28 @@ def require_api_key(
             status_code=401,
             detail="api key required (set PORTFOLIO_API_KEY and send X-API-Key header)",
         )
+
+
+def require_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> None:
+    """쓰기 엔드포인트 보호."""
+    _check_api_key(request, x_api_key)
+
+
+def require_read_auth(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+) -> None:
+    """자산 정보 노출 읽기 엔드포인트 보호.
+
+    READ_REQUIRE_AUTH=1 일 때만 인증을 강제한다. 미설정이면 pass-through.
+    외부 도메인에 호스팅하는 경우 켜는 것을 권장.
+    """
+    if not _READ_REQUIRE_AUTH:
+        return
+    _check_api_key(request, x_api_key)
 
 
 app.add_middleware(
@@ -138,7 +161,7 @@ def _cache_stale_hours(updated_at: str | None) -> float | None:
         return None
 
 
-@app.get("/api/portfolio")
+@app.get("/api/portfolio", dependencies=[Depends(require_read_auth)])
 async def get_portfolio():
     """전체 포트폴리오 현황 반환"""
     try:
@@ -169,7 +192,7 @@ async def get_portfolio():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/history")
+@app.get("/api/history", dependencies=[Depends(require_read_auth)])
 async def get_portfolio_history(days: int = 365):
     """일별 자산 추이"""
     try:
@@ -608,7 +631,7 @@ async def get_ticker_history(ticker: str, range: str = "1mo"):
     return data
 
 
-@app.get("/api/prices")
+@app.get("/api/prices", dependencies=[Depends(require_read_auth)])
 async def get_prices():
     """캐시된 가격 데이터 반환"""
     return get_cached_prices()
@@ -712,7 +735,7 @@ async def create_trade(trade: TradeCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/trades")
+@app.get("/api/trades", dependencies=[Depends(require_read_auth)])
 async def get_trades(
     account_name: Optional[str] = None,
     holding_key: Optional[str] = None,
