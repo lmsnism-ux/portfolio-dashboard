@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide, Trash2, Plus } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, type Exchange, type HoldingClass } from '../utils';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, type Exchange, type HoldingClass } from '../utils';
 import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding } from '../api';
 import {
   loadSettings as loadNotifSettings,
@@ -456,41 +456,23 @@ export default function Header({
     });
   };
 
-  // 백엔드 사전 계산값 사용 (Phase 1: 비즈로직 백엔드 이관)
-  const dcKrw    = data.dc_value_krw     ?? 0;
-  const dcDayChg = data.dc_day_change_krw ?? 0;
-  const dcProfit = (data.dc_value_krw ?? 0) - (data.dc_cost_krw ?? 0);
-  const dcCost   = data.dc_cost_krw      ?? 0;
-
-  // 부동산/대출 분리 토글 — 백엔드 total은 (투자자산 + 부동산순자산) 기준
-  const reEquityRaw = data.real_estate_equity_krw ?? 0;
-  const reCostRaw   = data.real_estate_cost_krw ?? 0;
-  const reLoan      = data.real_estate_loan_krw ?? 0;
-
-  let reAdjustValue = 0;
-  let reAdjustCost  = 0;
-  if (!realEstateOn) {
-    reAdjustValue = -reEquityRaw;
-    reAdjustCost  = -reCostRaw;
-  } else if (!loanOn) {
-    // 부동산은 포함, 대출은 부채로 미반영
-    reAdjustValue = reLoan;
-    reAdjustCost  = reLoan;
-  }
-
-  const dcExclude        = dcOn ? 0 : dcKrw;
-  const displayTotal     = data.total_value_krw - dcExclude + reAdjustValue;
-  const displayDayChg    = data.total_day_change_krw - (dcOn ? 0 : dcDayChg);
-  const displayProfit    = data.total_profit_krw - (dcOn ? 0 : dcProfit) + (reAdjustValue - reAdjustCost);
-  const investCost       = data.total_cost_krw - (dcOn ? 0 : dcCost) + reAdjustCost;
-  const displayProfitPct = investCost > 0 ? (displayProfit / investCost) * 100 : (data.total_profit_pct ?? 0);
-  const prevTotal        = displayTotal - displayDayChg;
-  const displayDayPct    = prevTotal > 0 ? (displayDayChg / prevTotal) * 100 : (data.total_day_change_pct ?? 0);
+  // 사용자 토글(퇴직연금/부동산/대출) 적용 — HistoryChart와 동일 기준의 표시값.
+  // utils.applyDisplayToggles에 로직 통합 (Phase 2: Header / HistoryChart 일관성).
+  const dcKrw = data.dc_value_krw ?? 0;
+  const {
+    total: displayTotal,
+    dayChg: displayDayChg,
+    dayPct: displayDayPct,
+    profit: displayProfit,
+    profitPct: displayProfitPct,
+  } = applyDisplayToggles(data, { dcOn, realEstateOn, loanOn });
 
   const profitColor = colorClass(displayProfit);
   const dayColor    = colorClass(displayDayChg);
 
-  // 보유 종목 → 거래소(KR/US)와 세부 카테고리로 분류
+  // 보유 종목 → 거래소(KR/US)와 세부 카테고리로 분류.
+  // React Compiler가 자동 메모이제이션 처리 — 수동 useMemo는 인접 코드와 상호작용해
+  // 'preserve-manual-memoization' 에러를 일으키므로 일반 변수로 둔다.
   const tickerItems: TickerItem[] = (() => {
     const seen = new Map<string, TickerItem>();
     data.accounts.forEach(acc => {
@@ -538,7 +520,8 @@ export default function Header({
   const activeOrder  = marketEditing ? draftOrder  : customOrder;
   const activeHidden = marketEditing ? draftHidden : hiddenSet;
 
-  const orderedItems = useMemo(() => {
+  // React Compiler가 자동 메모이제이션 처리.
+  const orderedItems = (() => {
     if (activeOrder.length === 0) return tickerItems;
     const map = new Map(tickerItems.map(t => [t.name, t]));
     const sorted: TickerItem[] = [];
@@ -549,7 +532,7 @@ export default function Header({
     // 저장된 순서에 없는 새 종목은 끝에 추가
     map.forEach(t => sorted.push(t));
     return sorted;
-  }, [tickerItems, activeOrder]);
+  })();
 
   // 편집 모드가 아니면 숨김 항목 제외, 편집 모드면 다 보여주되 흐리게
   const visibleItems = marketEditing
