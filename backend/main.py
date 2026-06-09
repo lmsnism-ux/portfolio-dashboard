@@ -86,9 +86,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Portfolio Dashboard API", lifespan=lifespan)
 
-_extra_origins = [
+_GITHUB_PAGES_ORIGIN = "https://lmsnism-ux.github.io"
+_extra_origins = list({_GITHUB_PAGES_ORIGIN} | {
     o.strip() for o in (os.environ.get("ALLOWED_ORIGINS", "")).split(",") if o.strip()
-]
+})
 
 # API 인증
 # - PORTFOLIO_API_KEY: 설정되면 쓰기 엔드포인트에 X-API-Key 헤더 필수
