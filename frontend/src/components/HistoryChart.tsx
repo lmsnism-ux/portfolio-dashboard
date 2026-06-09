@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { RotateCcw, CalendarDays, Info } from 'lucide-react';
 import { fetchHistory, triggerBackfill } from '../api';
-import { fmtKRW, fmtPct, colorClass, applyDisplayToggles } from '../utils';
+import { fmtKRW, fmtPct, colorClass, applyDisplayToggles, classifyHolding, type Exchange } from '../utils';
 import type { HistoryPoint, PortfolioSummary } from '../types';
 
 type Range = 'WEEK' | 'CM' | 'PM' | '3M' | 'YTD' | 'ALL' | 'CUSTOM';
@@ -215,22 +215,33 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
   // 기간에 따라 오늘 변동 or 전체 수익 기여 종목 표시
   const useProfit = range === 'ALL';
   const contributors = useMemo(() => {
-    const map = new Map<string, { name: string; changeKrw: number; changePct: number | null }>();
+    const map = new Map<string, { name: string; changeKrw: number; changePct: number | null; exchange: Exchange }>();
     data.accounts.flatMap(a => a.holdings).forEach(h => {
       const change = useProfit ? h.profit_krw : h.day_change_krw;
       const pct = useProfit ? h.profit_pct : h.day_change_pct;
       if (change === null || change === 0) return;
       const ex = map.get(h.name);
       if (ex) {
-        map.set(h.name, { name: h.name, changeKrw: ex.changeKrw + change, changePct: null });
+        map.set(h.name, { ...ex, changeKrw: ex.changeKrw + change, changePct: null });
       } else {
-        map.set(h.name, { name: h.name, changeKrw: change, changePct: pct });
+        map.set(h.name, { name: h.name, changeKrw: change, changePct: pct, exchange: classifyHolding(h).exchange });
       }
     });
+    // 한국장/미국장 양쪽이 표시될 수 있도록 8개까지
     return [...map.values()]
       .sort((a, b) => Math.abs(b.changeKrw) - Math.abs(a.changeKrw))
-      .slice(0, 6);
+      .slice(0, 8);
   }, [data.accounts, useProfit]);
+
+  // 한국장/미국장 분리
+  const contributorGroups = useMemo(() => {
+    const kr = contributors.filter(c => c.exchange === 'KR');
+    const us = contributors.filter(c => c.exchange === 'US');
+    return [
+      { key: 'KR', flag: '🇰🇷', label: '한국장', items: kr },
+      { key: 'US', flag: '🇺🇸', label: '미국장', items: us },
+    ].filter(g => g.items.length > 0);
+  }, [contributors]);
 
   const annualStats = useMemo(() => {
     if (!items || items.length < 2) return [];
@@ -548,22 +559,33 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {contributors.map((c, i) => (
-                <div key={i} className="flex items-center gap-2 bg-toss-bg rounded-xl px-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-medium text-toss-text-secondary truncate">{c.name}</p>
+            <div className="space-y-2.5">
+              {contributorGroups.map(group => (
+                <div key={group.key}>
+                  <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+                    <span className="text-[12px] leading-none" aria-hidden>{group.flag}</span>
+                    <span className="text-[10px] font-semibold text-toss-text-secondary">{group.label}</span>
+                    <span className="text-[9px] text-toss-text-tertiary">{group.items.length}</span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className={`num text-[12px] font-bold ${colorClass(c.changeKrw)}`}>
-                      {c.changeKrw >= 0 ? '+' : ''}
-                      {hideAssets ? '••••' : fmtKRW(c.changeKrw)}
-                    </p>
-                    {c.changePct !== null && (
-                      <p className={`num text-[10px] ${colorClass(c.changePct)}`}>
-                        ({c.changePct >= 0 ? '+' : ''}{c.changePct.toFixed(2)}%)
-                      </p>
-                    )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {group.items.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-toss-bg rounded-xl px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-medium text-toss-text-secondary truncate">{c.name}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`num text-[12px] font-bold ${colorClass(c.changeKrw)}`}>
+                            {c.changeKrw >= 0 ? '+' : ''}
+                            {hideAssets ? '••••' : fmtKRW(c.changeKrw)}
+                          </p>
+                          {c.changePct !== null && (
+                            <p className={`num text-[10px] ${colorClass(c.changePct)}`}>
+                              ({c.changePct >= 0 ? '+' : ''}{c.changePct.toFixed(2)}%)
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
