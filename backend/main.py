@@ -471,9 +471,8 @@ async def reorder_accounts(body: AccountOrder):
 @app.post("/api/portfolio/import")
 async def import_portfolio(request: Request):
     """포트폴리오 전체 교체 (마이그레이션 1회용 — 인증 없음)."""
-    from portfolio_calculator import PORTFOLIO_FILE
     data = await request.json()
-    PORTFOLIO_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_portfolio(data)
     return {"status": "ok", "accounts": len(data.get("accounts", []))}
 
 
