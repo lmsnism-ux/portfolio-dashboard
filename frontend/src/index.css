@@ -110,6 +110,24 @@ input, button, select, textarea {
   border-radius: 6px;
 }
 
+/* 하단 탭 바 (도미노 앱 스타일) — iOS식 블러 배경 */
+.bottom-nav {
+  background: color-mix(in srgb, var(--color-toss-card) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--color-toss-border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 탭 전환 페이드 인 */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tab-screen {
+  animation: tab-fade-in 0.22s ease-out;
+}
+
 /* 모달 진입 애니메이션 */
 @keyframes modal-fade-in {
   from { opacity: 0; }

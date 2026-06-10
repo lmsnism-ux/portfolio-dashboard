@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
+import BottomNav, { type TabKey } from './components/BottomNav';
+import MarketIndicesCard from './components/MarketIndicesCard';
 import AutoBuyCard from './components/AutoBuyCard';
 import RealEstateCard from './components/RealEstateCard';
 import CashCard from './components/CashCard';
@@ -29,6 +31,7 @@ const DARK_KEY = 'pd_dark';
 const RE_KEY = 'pd_realestate_show';
 const DC_KEY = 'pd_dc_show';
 const LOAN_KEY = 'pd_loan_on';
+const TAB_KEY = 'pd_tab';
 
 export default function App() {
   const [dark, setDark] = useState(() => {
@@ -48,6 +51,16 @@ export default function App() {
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
   const [loanOn, setLoanOn] = useState(() => localStorage.getItem(LOAN_KEY) !== '0');
   const [dcOn, setDcOn] = useState(() => localStorage.getItem(DC_KEY) !== '0');
+  const [tab, setTab] = useState<TabKey>(() => {
+    const saved = localStorage.getItem(TAB_KEY);
+    return (saved === 'home' || saved === 'assets' || saved === 'market' || saved === 'more')
+      ? saved : 'home';
+  });
+
+  const handleTabChange = (next: TabKey) => {
+    setTab(next);
+    localStorage.setItem(TAB_KEY, next);
+  };
 
   const handleRealEstateToggle = (on: boolean) => {
     setRealEstateOn(on);
@@ -131,106 +144,137 @@ export default function App() {
     );
   }
 
+  const goalCard = (() => {
+    const longTermKrw = data.accounts
+      .filter(a => isLongTermAccount(a.type))
+      .reduce((s, a) => s + a.value_krw, 0);
+    const dcKrw = dcOn ? 0 : (data.dc_value_krw ?? 0);
+    const reEquity = data.real_estate_equity_krw ?? 0;
+    return (
+      <GoalCard
+        goalKrw={data.goal_krw}
+        currentKrw={data.total_value_krw - reEquity - dcKrw}
+        progressPct={data.goal_progress_pct}
+        hideAssets={hideAssets}
+        longTermKrw={longTermKrw}
+      />
+    );
+  })();
+
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
-      <Header
-        data={data}
-        dark={dark}
-        hideAssets={hideAssets}
-        realEstateOn={realEstateOn}
-        loanOn={loanOn}
-        dcOn={dcOn}
-        onToggleDark={() => setDark((d) => !d)}
-        onToggleHide={() => setHideAssets((h) => !h)}
-        onRefresh={() => refreshMutation.mutate()}
-        onToggleDc={handleDcToggle}
-        isRefreshing={refreshMutation.isPending}
-        onAddHolding={() => {
-          // 시장 현황 편집 모드에서 + 누름 → 첫 번째 비-스냅샷 계좌를 기본으로 추가 모달
-          const target = data.accounts.find(a => a.holdings.some(h => !h.is_snapshot)) ?? data.accounts[0];
-          if (target) setAdding(target);
-        }}
-      />
-
-      <main className="max-w-7xl mx-auto px-4 py-5 space-y-4">
-        {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
-        <HistoryChart
+      {tab === 'home' && (
+        <Header
           data={data}
+          dark={dark}
           hideAssets={hideAssets}
-          dcOn={dcOn}
           realEstateOn={realEstateOn}
           loanOn={loanOn}
+          dcOn={dcOn}
+          onToggleDark={() => setDark((d) => !d)}
+          onToggleHide={() => setHideAssets((h) => !h)}
+          onRefresh={() => refreshMutation.mutate()}
+          onToggleDc={handleDcToggle}
+          isRefreshing={refreshMutation.isPending}
+          onAddHolding={() => {
+            // 시장 현황 편집 모드에서 + 누름 → 첫 번째 비-스냅샷 계좌를 기본으로 추가 모달
+            const target = data.accounts.find(a => a.holdings.some(h => !h.is_snapshot)) ?? data.accounts[0];
+            if (target) setAdding(target);
+          }}
         />
+      )}
+      {tab !== 'home' && (
+        <div className="max-w-2xl mx-auto px-5 pt-6 pb-1">
+          <h1 className="text-[22px] font-bold text-toss-text-primary">
+            {tab === 'assets' ? '내 자산' : tab === 'market' ? '시장' : '더보기'}
+          </h1>
+        </div>
+      )}
 
-        {/* 부동산 · 대출 - HistoryChart 바로 아래 */}
-        {data.real_estate && (
-          <RealEstateCard
-            data={data.real_estate}
-            hideAssets={hideAssets}
-            visible={realEstateOn}
-            loanOn={loanOn}
-            onToggle={handleRealEstateToggle}
-            onToggleLoan={handleLoanToggle}
-          />
-        )}
-
-        {/* 현금·예금 */}
-        {data.cash_assets && data.cash_assets.items.length > 0 && (
-          <CashCard
-            data={data.cash_assets}
-            cashTotal={data.cash_total_krw ?? 0}
-            hideAssets={hideAssets}
-          />
-        )}
-
-        {/* 도넛 차트 3개 나란히 */}
-        <AllocationCard data={data} hideAssets={hideAssets} />
-
-        {/* 종목별 비중 바 차트 */}
-        {data.top_holdings?.length > 0 && (
-          <HoldingsBar data={data} hideAssets={hideAssets} />
-        )}
-
-        {/* 목표/자동매수 */}
-        {(() => {
-          const longTermKrw = data.accounts
-            .filter(a => isLongTermAccount(a.type))
-            .reduce((s, a) => s + a.value_krw, 0);
-          const dcKrw = dcOn ? 0 : (data.dc_value_krw ?? 0);
-          const reEquity = data.real_estate_equity_krw ?? 0;
-          return (
-            <GoalCard
-              goalKrw={data.goal_krw}
-              currentKrw={data.total_value_krw - reEquity - dcKrw}
-              progressPct={data.goal_progress_pct}
+      <main key={tab} className="tab-screen max-w-2xl mx-auto px-4 py-5 space-y-4 pb-24">
+        {tab === 'home' && (
+          <>
+            {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
+            <HistoryChart
+              data={data}
               hideAssets={hideAssets}
-              longTermKrw={longTermKrw}
+              dcOn={dcOn}
+              realEstateOn={realEstateOn}
+              loanOn={loanOn}
             />
-          );
-        })()}
 
-        <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
+            {/* 자산 배분 도넛 */}
+            <AllocationCard data={data} hideAssets={hideAssets} />
 
-        {/* 리밸런싱 도우미 + 히트맵 + 시장 인사이트 (lazy load) */}
-        <Suspense fallback={null}>
-          <RebalanceCard data={data} hideAssets={hideAssets} />
-          <ProfitHeatmap />
-          <MarketInsightsCard />
-        </Suspense>
+            {/* 목표 */}
+            {goalCard}
+          </>
+        )}
 
-        {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
-        <HoldingsList
-          data={data}
-          hideAssets={hideAssets}
-          onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
-          onAdd={(acc) => setAdding(acc)}
-          onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
-          onMoveAccount={moveAccount}
-          onAddAccount={() => setAddingAccount(true)}
-        />
+        {tab === 'assets' && (
+          <>
+            {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
+            <HoldingsList
+              data={data}
+              hideAssets={hideAssets}
+              onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
+              onAdd={(acc) => setAdding(acc)}
+              onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
+              onMoveAccount={moveAccount}
+              onAddAccount={() => setAddingAccount(true)}
+            />
+
+            {/* 종목별 비중 바 차트 */}
+            {data.top_holdings?.length > 0 && (
+              <HoldingsBar data={data} hideAssets={hideAssets} />
+            )}
+
+            {/* 부동산 · 대출 */}
+            {data.real_estate && (
+              <RealEstateCard
+                data={data.real_estate}
+                hideAssets={hideAssets}
+                visible={realEstateOn}
+                loanOn={loanOn}
+                onToggle={handleRealEstateToggle}
+                onToggleLoan={handleLoanToggle}
+              />
+            )}
+
+            {/* 현금·예금 */}
+            {data.cash_assets && data.cash_assets.items.length > 0 && (
+              <CashCard
+                data={data.cash_assets}
+                cashTotal={data.cash_total_krw ?? 0}
+                hideAssets={hideAssets}
+              />
+            )}
+          </>
+        )}
+
+        {tab === 'market' && (
+          <>
+            <MarketIndicesCard />
+            <Suspense fallback={null}>
+              <MarketInsightsCard />
+              <ProfitHeatmap />
+            </Suspense>
+          </>
+        )}
+
+        {tab === 'more' && (
+          <>
+            <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
+            <Suspense fallback={null}>
+              <RebalanceCard data={data} hideAssets={hideAssets} />
+            </Suspense>
+          </>
+        )}
 
         <div className="h-4" />
       </main>
+
+      <BottomNav active={tab} onChange={handleTabChange} />
 
       <Suspense fallback={null}>
         {editing && (

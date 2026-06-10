@@ -581,7 +581,7 @@ export default function Header({
           </div>
         )}
 
-        <div className="max-w-7xl mx-auto px-5 pt-4 pb-4">
+        <div className="max-w-2xl mx-auto px-5 pt-4 pb-4">
           {/* 상단 바 */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -731,7 +731,7 @@ export default function Header({
       {/* ── Non-sticky: 시장 현황 대시보드 (한국장 / 미국장 분리) ── */}
       {tickerItems.length > 0 && (
         <div className="bg-toss-bg/40 border-b border-toss-border">
-          <div className="max-w-7xl mx-auto px-4 sm:px-5 py-3 space-y-3">
+          <div className="max-w-2xl mx-auto px-4 sm:px-5 py-3 space-y-3">
             {/* 시장 상태 카드 (한국장 + 미국장) */}
             <div className="flex flex-col sm:flex-row gap-2">
               {krItems.length > 0 && (
