@@ -4,6 +4,7 @@ import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
 import BottomNav, { type TabKey } from './components/BottomNav';
 import MarketIndicesCard from './components/MarketIndicesCard';
+import QuickTradeCard from './components/QuickTradeCard';
 import AutoBuyCard from './components/AutoBuyCard';
 import RealEstateCard from './components/RealEstateCard';
 import CashCard from './components/CashCard';
@@ -48,7 +49,7 @@ export default function App() {
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
-  const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData } | null>(null);
+  const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData; side?: 'buy' | 'sell' } | null>(null);
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
   const [loanOn, setLoanOn] = useState(() => localStorage.getItem(LOAN_KEY) !== '0');
   const [dcOn, setDcOn] = useState(() => localStorage.getItem(DC_KEY) !== '0');
@@ -195,6 +196,13 @@ export default function App() {
       <main key={tab} className="tab-screen max-w-2xl mx-auto px-4 py-5 space-y-4 pb-24">
         {tab === 'home' && (
           <>
+            {/* 빠른 거래 — 상단 가로 스크롤 종목 카드 */}
+            <QuickTradeCard
+              data={data}
+              onTrade={(acc, h, side) => setTrading({ account: acc, holding: h, side })}
+              onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
+            />
+
             {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
             <HistoryChart
               data={data}
@@ -294,6 +302,7 @@ export default function App() {
           <TradeModal
             account={trading.account}
             holding={trading.holding}
+            initialSide={trading.side}
             onClose={() => setTrading(null)}
           />
         )}

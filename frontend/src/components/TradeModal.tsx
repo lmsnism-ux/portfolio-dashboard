@@ -8,6 +8,7 @@ import TradeHistoryModal from './TradeHistoryModal';
 interface Props {
   account: AccountData;
   holding: HoldingData;
+  initialSide?: 'buy' | 'sell';
   onClose: () => void;
 }
 
@@ -20,10 +21,10 @@ type TradePreview =
  * 매수: 새 평단가 = (기존_수량 × 기존_평단가 + 체결_수량 × 체결가) / (기존_수량 + 체결_수량)
  * 매도: 평단가 유지, 보유수량만 감소
  */
-export default function TradeModal({ account, holding, onClose }: Props) {
+export default function TradeModal({ account, holding, initialSide = 'buy', onClose }: Props) {
   const queryClient = useQueryClient();
   const isUsd = holding.currency === 'USD';
-  const [side, setSide] = useState<Side>('buy');
+  const [side, setSide] = useState<Side>(initialSide);
   const [qty, setQty] = useState('');
   const [price, setPrice] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
