@@ -13,9 +13,22 @@ interface Props {
 }
 
 type Side = 'buy' | 'sell';
-type TradePreview =
-  | { kind: 'valid'; newShares: number; newAvg: number }
-  | { kind: 'error'; error: string };
+
+interface ValidPreview {
+  kind: 'valid';
+  newShares: number;
+  newAvg: number;
+  totalCost?: number;       // 매수 시 총 투자금액
+  proceeds?: number;        // 매도 시 예상 수익금
+  realizedProfit?: number;  // 매도 시 실현 손익 (avg_price 있을 때만)
+}
+interface ErrorPreview { kind: 'error'; error: string; }
+type TradePreview = ValidPreview | ErrorPreview;
+
+function fmt(val: number, isUsd: boolean): string {
+  if (isUsd) return `$${val.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+  return `₩${Math.round(val).toLocaleString('ko-KR')}`;
+}
 
 /**
  * 매수: 새 평단가 = (기존_수량 × 기존_평단가 + 체결_수량 × 체결가) / (기존_수량 + 체결_수량)
@@ -24,9 +37,11 @@ type TradePreview =
 export default function TradeModal({ account, holding, initialSide = 'buy', onClose }: Props) {
   const queryClient = useQueryClient();
   const isUsd = holding.currency === 'USD';
+
   const [side, setSide] = useState<Side>(initialSide);
   const [qty, setQty] = useState('');
-  const [price, setPrice] = useState('');
+  // 현재가로 가격 필드 초기화
+  const [price, setPrice] = useState(() => holding.current_price?.toString() ?? '');
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const mutation = useMutation({
@@ -53,18 +68,22 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
     const q = parseFloat(qty);
     const p = parseFloat(price);
     if (!Number.isFinite(q) || q <= 0) return null;
-    const oldShares = holding.shares || 0;
-    const oldAvg = holding.avg_price || 0;
+
+    const oldShares = holding.shares ?? 0;
+    const oldAvg = holding.avg_price ?? 0;
 
     if (side === 'buy') {
       if (!Number.isFinite(p) || p <= 0) return null;
       const newShares = oldShares + q;
-      const newAvg = (oldShares * oldAvg + q * p) / newShares;
-      return { kind: 'valid', newShares, newAvg };
+      const newAvg = newShares > 0 ? (oldShares * oldAvg + q * p) / newShares : p;
+      return { kind: 'valid', newShares, newAvg, totalCost: q * p };
     } else {
-      if (q > oldShares) return { kind: 'error', error: `매도 수량이 보유 수량(${oldShares})보다 큽니다` };
+      if (q > oldShares) return { kind: 'error', error: `보유 수량(${oldShares})보다 많습니다` };
       const newShares = oldShares - q;
-      return { kind: 'valid', newShares, newAvg: oldAvg };
+      const hasSellPrice = Number.isFinite(p) && p > 0;
+      const proceeds = hasSellPrice ? q * p : undefined;
+      const realizedProfit = hasSellPrice && oldAvg > 0 ? q * (p - oldAvg) : undefined;
+      return { kind: 'valid', newShares, newAvg: oldAvg, proceeds, realizedProfit };
     }
   }, [qty, price, side, holding]);
 
@@ -82,11 +101,13 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
       ticker: holding.ticker,
       side,
       shares: q,
-      price: side === 'buy' ? p : (Number.isFinite(p) ? p : null),
+      price: Number.isFinite(p) && p > 0 ? p : null,
       currency: isUsd ? 'USD' : 'KRW',
       apply_to_holding: true,
     });
   };
+
+  const currentShares = holding.shares ?? 0;
 
   return (
     <div
@@ -97,40 +118,43 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
         className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 헤더 */}
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between">
           <div>
             <p className="text-xs text-toss-text-tertiary">{account.name}</p>
             <h2 className="text-lg font-bold text-toss-text-primary">{holding.name}</h2>
-            <p className="num text-[11px] text-toss-text-tertiary mt-0.5">
-              현재 {holding.shares?.toLocaleString('ko-KR', { maximumFractionDigits: 6 }) ?? 0}주
-              {holding.avg_price !== null
-                ? ` · 평단 ${isUsd ? '$' : '₩'}${holding.avg_price.toLocaleString('ko-KR', {
-                    maximumFractionDigits: 2,
-                  })}`
-                : ''}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="num text-[11px] text-toss-text-tertiary">
+                보유 {currentShares.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}주
+              </p>
+              {holding.avg_price != null && (
+                <p className="num text-[11px] text-toss-text-tertiary">
+                  · 평단 {fmt(holding.avg_price, isUsd)}
+                </p>
+              )}
+              {holding.current_price != null && (
+                <p className="num text-[11px] text-toss-text-tertiary">
+                  · 현재가 {fmt(holding.current_price, isUsd)}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setHistoryOpen(true)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-toss-bg hover:bg-toss-blue-soft active:scale-95 transition-all text-[11px] font-semibold text-toss-text-secondary"
-              title="체결 내역"
             >
               <History size={12} />
               내역
             </button>
-            <button
-              onClick={onClose}
-              aria-label="닫기"
-              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95"
-            >
+            <button onClick={onClose} aria-label="닫기" className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95">
               <X size={18} className="text-toss-text-secondary" />
             </button>
           </div>
         </div>
 
         <div className="px-5 py-2 space-y-4">
-          {/* 매수/매도 토글 */}
+          {/* 매수/매도 탭 */}
           <div className="flex gap-2">
             <button
               onClick={() => setSide('buy')}
@@ -150,7 +174,27 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
             </button>
           </div>
 
-          <Field label="체결 수량">
+          {/* 체결 수량 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-toss-text-secondary">체결 수량</span>
+              {side === 'sell' && currentShares > 0 && (
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setQty((currentShares / 2).toString())}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-toss-bg border border-toss-border text-toss-text-secondary active:scale-95"
+                  >
+                    절반
+                  </button>
+                  <button
+                    onClick={() => setQty(currentShares.toString())}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-toss-down/10 border border-toss-down/30 text-toss-down active:scale-95"
+                  >
+                    전체 매도
+                  </button>
+                </div>
+              )}
+            </div>
             <input
               type="number"
               step="any"
@@ -160,42 +204,69 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
               placeholder="0"
               autoFocus
             />
-          </Field>
+          </div>
 
-          {side === 'buy' && (
-            <Field label={`체결가 (${isUsd ? 'USD' : 'KRW'})`}>
-              <input
-                type="number"
-                step="any"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="num w-full bg-toss-bg rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-toss-blue"
-                placeholder={isUsd ? '예: 92.5' : '예: 28000'}
-              />
-            </Field>
-          )}
+          {/* 체결가 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-toss-text-secondary">
+                체결가 ({isUsd ? 'USD' : 'KRW'}){side === 'sell' && ' · 선택'}
+              </span>
+              {holding.current_price != null && (
+                <button
+                  onClick={() => setPrice(holding.current_price!.toString())}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-toss-blue-soft text-toss-blue active:scale-95"
+                >
+                  현재가 입력
+                </button>
+              )}
+            </div>
+            <input
+              type="number"
+              step="any"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              className="num w-full bg-toss-bg rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-toss-blue"
+              placeholder={isUsd ? '예: 92.50' : '예: 28000'}
+            />
+          </div>
 
           {previewError && (
             <p className="text-xs text-toss-up">{previewError}</p>
           )}
 
+          {/* 체결 후 미리보기 */}
           {validPreview && (
-            <div className="bg-toss-blue-soft rounded-2xl p-4">
-              <p className="text-xs text-toss-text-secondary mb-2">체결 후</p>
-              <div className="flex justify-between mb-1">
-                <span className="text-xs text-toss-text-tertiary">새 보유수량</span>
-                <span className="num text-sm font-semibold text-toss-text-primary">
-                  {validPreview.newShares.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}주
-                </span>
-              </div>
+            <div className={`rounded-2xl p-4 space-y-2 ${side === 'buy' ? 'bg-toss-up-soft' : 'bg-toss-down-soft'}`}>
+              <p className="text-xs font-semibold text-toss-text-secondary">체결 후 예상</p>
+
+              {side === 'buy' && validPreview.totalCost != null && (
+                <PreviewRow label="총 매수금액" value={fmt(validPreview.totalCost, isUsd)} />
+              )}
+
+              <PreviewRow
+                label="새 보유수량"
+                value={`${validPreview.newShares.toLocaleString('ko-KR', { maximumFractionDigits: 6 })}주`}
+              />
+
               {side === 'buy' && (
-                <div className="flex justify-between">
-                  <span className="text-xs text-toss-text-tertiary">새 평단가 (가중평균)</span>
-                  <span className="num text-sm font-semibold text-toss-text-primary">
-                    {isUsd ? '$' : '₩'}
-                    {validPreview.newAvg.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}
-                  </span>
-                </div>
+                <PreviewRow
+                  label="새 평단가 (가중평균)"
+                  value={fmt(validPreview.newAvg, isUsd)}
+                  highlight
+                />
+              )}
+
+              {side === 'sell' && validPreview.proceeds != null && (
+                <PreviewRow label="예상 수익금" value={fmt(validPreview.proceeds, isUsd)} />
+              )}
+
+              {side === 'sell' && validPreview.realizedProfit != null && (
+                <PreviewRow
+                  label="실현 손익"
+                  value={`${validPreview.realizedProfit >= 0 ? '+' : ''}${fmt(validPreview.realizedProfit, isUsd)}`}
+                  color={validPreview.realizedProfit >= 0 ? 'up' : 'down'}
+                />
               )}
             </div>
           )}
@@ -205,6 +276,7 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
           )}
         </div>
 
+        {/* 하단 버튼 */}
         <div className="sticky bottom-0 bg-toss-card px-5 pt-3 pb-5 border-t border-toss-border flex gap-2">
           <button
             onClick={onClose}
@@ -215,7 +287,7 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
           <button
             onClick={save}
             disabled={mutation.isPending || !validPreview}
-            className={`flex-[2] py-3 rounded-xl text-white font-semibold disabled:opacity-50 active:scale-[0.98] ${
+            className={`flex-[2] py-3 rounded-xl text-white font-semibold disabled:opacity-50 active:scale-[0.98] transition-opacity ${
               side === 'buy' ? 'bg-toss-up' : 'bg-toss-down'
             }`}
           >
@@ -237,6 +309,33 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
   );
 }
 
+function PreviewRow({
+  label,
+  value,
+  highlight,
+  color,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  color?: 'up' | 'down';
+}) {
+  const valCls = color === 'up'
+    ? 'text-toss-up'
+    : color === 'down'
+    ? 'text-toss-down'
+    : highlight
+    ? 'text-toss-text-primary'
+    : 'text-toss-text-primary';
+
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs text-toss-text-tertiary">{label}</span>
+      <span className={`num text-sm font-semibold ${valCls}`}>{value}</span>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -245,3 +344,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+// Field is kept for potential external use
+void Field;

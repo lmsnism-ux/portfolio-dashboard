@@ -15,7 +15,7 @@ import TaxOptimizerCard from './components/TaxOptimizerCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import { DashboardSkeleton } from './components/Skeletons';
-import { isLongTermAccount } from './utils';
+import { isLongTermAccount, fmtKRW, fmtPct, colorClass } from './utils';
 import { useAlertTriggers } from './hooks/useAlertTriggers';
 import type { AccountData, HoldingData } from './types';
 
@@ -186,10 +186,25 @@ export default function App() {
         />
       )}
       {tab !== 'home' && (
-        <div className="max-w-2xl mx-auto px-5 pt-6 pb-1">
+        <div className="max-w-2xl mx-auto px-5 pt-6 pb-2">
           <h1 className="text-[22px] font-bold text-toss-text-primary">
             {tab === 'assets' ? '내 자산' : tab === 'market' ? '시장' : '더보기'}
           </h1>
+          {tab === 'assets' && (
+            <div className="mt-1.5">
+              <p className="num text-[32px] font-bold text-toss-text-primary leading-tight">
+                {hideAssets ? '•••••' : fmtKRW(data.total_value_krw)}
+              </p>
+              {!hideAssets && (
+                <p className={`num text-sm font-semibold mt-0.5 ${colorClass(data.total_day_change_krw)}`}>
+                  오늘{' '}
+                  {data.total_day_change_krw >= 0 ? '+' : ''}
+                  {fmtKRW(data.total_day_change_krw)}
+                  {data.total_day_change_pct != null && ` (${fmtPct(data.total_day_change_pct)})`}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
