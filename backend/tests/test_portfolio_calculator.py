@@ -132,6 +132,82 @@ class PortfolioCalculatorTest(unittest.TestCase):
 
             self.assertEqual(label, "6/12 (금)")
 
+    def test_summary_includes_tax_optimization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pc = load_calculator(tmp)
+
+            portfolio = {
+                "tax_profile": {
+                    "year": 2026,
+                    "salary_band": "under_55m",
+                    "isa_type": "general",
+                    "broker_fee_rate": 0.0,
+                    "sec_fee_rate": 0.0,
+                    "isa_pension_transfer_amount_krw": 20_000_000,
+                },
+                "accounts": [
+                    {
+                        "name": "직투",
+                        "type": "기본계좌",
+                        "currency": "USD",
+                        "holdings": [
+                            {
+                                "name": "QLD",
+                                "ticker": "QLD",
+                                "shares": 10,
+                                "avg_price_usd": 100,
+                                "asset_class": "주식",
+                                "region": "미국",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "ISA",
+                        "type": "ISA",
+                        "holdings": [
+                            {
+                                "name": "국내ETF",
+                                "ticker": "123456",
+                                "shares": 10,
+                                "avg_price_krw": 1000,
+                                "asset_class": "주식",
+                                "region": "국내",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "연금",
+                        "type": "연금저축",
+                        "tax_contribution_2026_krw": 3_000_000,
+                        "holdings": [],
+                    },
+                    {
+                        "name": "IRP",
+                        "type": "IRP",
+                        "tax_contribution_2026_krw": 2_000_000,
+                        "holdings": [],
+                    },
+                ],
+            }
+            prices = {
+                "QLD": {"price": 400, "currency": "USD", "label": "현재가"},
+                "123456": {"price": 300_000, "currency": "KRW", "label": "현재가"},
+            }
+
+            summary = pc.build_portfolio_summary(portfolio, prices, usd_krw=1000)
+            tax = summary["tax_optimization"]
+
+            self.assertEqual(tax["direct_us"]["estimated_unrealized_gain_krw"], 3_000_000)
+            self.assertEqual(tax["direct_us"]["taxable_gain_if_full_sale_krw"], 550_000)
+            self.assertEqual(tax["direct_us"]["estimated_tax_if_full_sale_krw"], 121_000)
+            self.assertEqual(tax["pension"]["deductible_krw"], 5_000_000)
+            self.assertEqual(tax["pension"]["expected_refund_krw"], 825_000)
+            self.assertEqual(tax["pension"]["add_pension_savings_krw"], 3_000_000)
+            self.assertEqual(tax["pension"]["add_irp_krw"], 1_000_000)
+            self.assertEqual(tax["isa"]["profit_krw"], 2_990_000)
+            self.assertEqual(tax["isa"]["taxable_profit_krw"], 990_000)
+            self.assertEqual(tax["isa"]["extra_credit_base_krw"], 2_000_000)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -185,6 +185,59 @@ export interface MarketInsights {
   disclaimer: string;
 }
 
+export interface DirectUsTaxHoldingAction {
+  account_name: string;
+  name: string;
+  ticker: string | null;
+  safe_sell_shares: number;
+  expected_gain_krw: number;
+}
+
+export interface DirectUsTaxSummary {
+  limit_krw: number;
+  estimated_unrealized_gain_krw: number;
+  remaining_safe_gain_room_krw: number;
+  taxable_gain_if_full_sale_krw: number;
+  estimated_tax_if_full_sale_krw: number;
+  holdings_count: number;
+  fee_assumptions: {
+    broker_fee_rate: number;
+    sec_fee_rate: number;
+  };
+  recommended_sells: DirectUsTaxHoldingAction[];
+}
+
+export interface PensionTaxSummary {
+  salary_band: string;
+  credit_rate: number;
+  source: 'tax_profile' | 'account_contribution' | 'missing' | string;
+  pension_savings_paid_krw: number;
+  irp_paid_krw: number;
+  deductible_krw: number;
+  expected_refund_krw: number;
+  max_refund_krw: number;
+  add_pension_savings_krw: number;
+  add_irp_krw: number;
+}
+
+export interface IsaTaxSummary {
+  type: string;
+  tax_free_limit_krw: number;
+  value_krw: number;
+  profit_krw: number;
+  taxable_profit_krw: number;
+  pension_transfer_amount_krw: number;
+  extra_credit_base_krw: number;
+}
+
+export interface TaxOptimizationSummary {
+  year: number;
+  direct_us: DirectUsTaxSummary;
+  pension: PensionTaxSummary;
+  isa: IsaTaxSummary;
+  alerts: string[];
+}
+
 export interface PortfolioSummary {
   total_value_krw: number;
   total_cost_krw: number;
@@ -201,6 +254,7 @@ export interface PortfolioSummary {
   asset_class_weights: ClassWeight[];
   region_weights: ClassWeight[];
   auto_buy_items: AutoBuySummary[];
+  tax_optimization?: TaxOptimizationSummary;
   goal_krw: number | null;
   goal_progress_pct: number | null;
   market_status: 'live' | 'closed';

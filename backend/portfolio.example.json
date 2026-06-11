@@ -1,5 +1,13 @@
 {
   "goal_krw": 120000000,
+  "tax_profile": {
+    "year": 2026,
+    "salary_band": "under_55m",
+    "isa_type": "general",
+    "broker_fee_rate": 0.0025,
+    "sec_fee_rate": 0.0000278,
+    "isa_pension_transfer_amount_krw": 30000000
+  },
   "accounts": [
     {
       "name": "토스증권",
@@ -59,6 +67,7 @@
     {
       "name": "미래에셋 연금저축",
       "type": "연금저축",
+      "tax_contribution_2026_krw": 3600000,
       "holdings": [
         {
           "name": "TIGER 미국테크TOP10 INDXX",
@@ -73,6 +82,7 @@
     {
       "name": "국민은행 퇴직연금 IRP",
       "type": "IRP",
+      "tax_contribution_2026_krw": 1000000,
       "etf_limit": 0.7,
       "holdings": [
         {
@@ -107,6 +117,7 @@
     {
       "name": "삼성증권 IRP",
       "type": "IRP",
+      "tax_contribution_2026_krw": 500000,
       "etf_limit": 0.7,
       "holdings": [
         {

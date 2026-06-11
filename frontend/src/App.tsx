@@ -10,6 +10,7 @@ import CashCard from './components/CashCard';
 import HistoryChart from './components/HistoryChart';
 import GoalCard from './components/GoalCard';
 import AllocationCard from './components/AllocationCard';
+import TaxOptimizerCard from './components/TaxOptimizerCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import { DashboardSkeleton } from './components/Skeletons';
@@ -205,6 +206,9 @@ export default function App() {
 
             {/* 자산 배분 도넛 */}
             <AllocationCard data={data} hideAssets={hideAssets} />
+
+            {/* 절세 최적화 */}
+            <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
 
             {/* 목표 */}
             {goalCard}

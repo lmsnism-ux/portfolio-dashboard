@@ -323,6 +323,179 @@ def calc_irp_etf_ratio(account: dict, prices: dict, usd_krw: float) -> dict:
         "sol_price": sol_price,
     }
 
+
+def _is_tax_sheltered_account(account: dict) -> bool:
+    """해외 직투 양도세 계산에서 제외할 절세/연금 계좌 판별."""
+    s = f"{account.get('type', '')} {account.get('name', '')}"
+    return any(k in s for k in ("ISA", "연금", "IRP", "DC", "퇴직"))
+
+
+def _account_tax_contribution(account: dict, tax_year: int) -> float | None:
+    """계좌별 올해 세액공제 대상 납입액 메타를 읽는다."""
+    keys = (
+        f"tax_contribution_{tax_year}_krw",
+        f"contribution_{tax_year}_krw",
+        "current_year_contribution_krw",
+        "annual_contribution_krw",
+    )
+    for key in keys:
+        value = account.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def build_tax_optimization(portfolio: dict, accounts_data: list[dict], usd_krw: float) -> dict:
+    """포트폴리오 기반 세금/절세 요약.
+
+    보유 평가액 계산과 분리해, 기존 포트폴리오 관리 흐름 위에 절세 레이어만 얹는다.
+    """
+    tax_profile = portfolio.get("tax_profile") or {}
+    tax_year = int(tax_profile.get("year") or datetime.now(timezone(timedelta(hours=9))).year)
+    direct_limit = int(tax_profile.get("direct_us_gain_limit_krw", 2_450_000))
+    broker_fee_rate = float(tax_profile.get("broker_fee_rate", 0.0025))
+    sec_fee_rate = float(tax_profile.get("sec_fee_rate", 0.0000278))
+
+    direct_holdings = []
+    for account in accounts_data:
+        if _is_tax_sheltered_account(account):
+            continue
+        for h in account.get("holdings", []):
+            if h.get("currency") != "USD":
+                continue
+            shares = h.get("shares")
+            current_price = h.get("current_price")
+            avg_price = h.get("avg_price")
+            if not shares or not current_price or not avg_price:
+                continue
+
+            sell_net = current_price * usd_krw * (1 - broker_fee_rate - sec_fee_rate)
+            buy_cost = avg_price * usd_krw * (1 + broker_fee_rate)
+            gain_per_share = sell_net - buy_cost
+            unrealized_gain = gain_per_share * shares
+            direct_holdings.append({
+                "account_name": account["name"],
+                "name": h["name"],
+                "ticker": h.get("ticker"),
+                "shares": shares,
+                "gain_per_share_krw": round(gain_per_share),
+                "unrealized_gain_krw": round(unrealized_gain),
+                "value_krw": h.get("value_krw", 0),
+            })
+
+    estimated_gain = sum(h["unrealized_gain_krw"] for h in direct_holdings)
+    taxable_gain = max(0, estimated_gain - direct_limit)
+    remaining_room = max(0, direct_limit - max(0, estimated_gain))
+    positive_holdings = sorted(
+        [h for h in direct_holdings if h["gain_per_share_krw"] > 0],
+        key=lambda h: h["gain_per_share_krw"],
+        reverse=True,
+    )
+
+    sell_room = direct_limit
+    recommended_sells = []
+    for h in positive_holdings:
+        if sell_room <= 0:
+            break
+        sell_qty = min(h["shares"], sell_room / h["gain_per_share_krw"])
+        if sell_qty <= 0:
+            continue
+        realized_gain = sell_qty * h["gain_per_share_krw"]
+        recommended_sells.append({
+            "account_name": h["account_name"],
+            "name": h["name"],
+            "ticker": h.get("ticker"),
+            "safe_sell_shares": round(sell_qty, 6),
+            "expected_gain_krw": round(realized_gain),
+        })
+        sell_room -= realized_gain
+
+    salary_band = tax_profile.get("salary_band") or "over_55m"
+    pension_credit_rate = 0.165 if salary_band in ("under_55m", "low", "5500_under") else 0.132
+    pension_savings_paid = tax_profile.get("pension_savings_paid_krw")
+    irp_paid = tax_profile.get("irp_paid_krw")
+    pension_source = "tax_profile"
+
+    if not isinstance(pension_savings_paid, (int, float)) or not isinstance(irp_paid, (int, float)):
+        pension_savings_paid = 0.0
+        irp_paid = 0.0
+        found_any_contribution = False
+        for raw_account in portfolio.get("accounts", []):
+            contribution = _account_tax_contribution(raw_account, tax_year)
+            if contribution is None:
+                continue
+            found_any_contribution = True
+            account_type = raw_account.get("type", "")
+            if "연금저축" in account_type:
+                pension_savings_paid += contribution
+            elif "IRP" in account_type or "퇴직" in account_type:
+                irp_paid += contribution
+        pension_source = "account_contribution" if found_any_contribution else "missing"
+
+    pension_limit = 6_000_000
+    pension_combined_limit = 9_000_000
+    pension_deductible = min(float(pension_savings_paid or 0), pension_limit)
+    irp_deductible = min(float(irp_paid or 0), max(0, pension_combined_limit - pension_deductible))
+    total_deductible = min(pension_combined_limit, pension_deductible + irp_deductible)
+    combined_room = max(0, pension_combined_limit - total_deductible)
+    add_savings = min(max(0, pension_limit - float(pension_savings_paid or 0)), combined_room)
+    add_irp = max(0, combined_room - add_savings)
+
+    isa_type = tax_profile.get("isa_type") or "general"
+    isa_limit = 4_000_000 if isa_type in ("low_income", "youth", "서민형", "youth_low_income") else 2_000_000
+    isa_accounts = [a for a in accounts_data if "ISA" in f"{a.get('type', '')} {a.get('name', '')}"]
+    isa_value = sum(a.get("value_krw", 0) for a in isa_accounts)
+    isa_profit = sum(a.get("profit_krw", 0) for a in isa_accounts)
+    isa_transfer_amount = tax_profile.get("isa_pension_transfer_amount_krw")
+    if not isinstance(isa_transfer_amount, (int, float)):
+        isa_transfer_amount = isa_value
+
+    alerts = [
+        "미국 주식은 T+2 결제일 기준이므로 12월 26일 이전 매도 필요",
+        "ISA 비과세 한도는 세법 개정에 따라 변경될 수 있음",
+    ]
+    if pension_source == "missing":
+        alerts.append("연금 세액공제는 올해 납입액 메타가 없어 보수적으로 0원 기준 표시")
+
+    return {
+        "year": tax_year,
+        "direct_us": {
+            "limit_krw": direct_limit,
+            "estimated_unrealized_gain_krw": round(estimated_gain),
+            "remaining_safe_gain_room_krw": round(remaining_room),
+            "taxable_gain_if_full_sale_krw": round(taxable_gain),
+            "estimated_tax_if_full_sale_krw": round(taxable_gain * 0.22),
+            "holdings_count": len(direct_holdings),
+            "fee_assumptions": {
+                "broker_fee_rate": broker_fee_rate,
+                "sec_fee_rate": sec_fee_rate,
+            },
+            "recommended_sells": recommended_sells,
+        },
+        "pension": {
+            "salary_band": salary_band,
+            "credit_rate": pension_credit_rate,
+            "source": pension_source,
+            "pension_savings_paid_krw": round(float(pension_savings_paid or 0)),
+            "irp_paid_krw": round(float(irp_paid or 0)),
+            "deductible_krw": round(total_deductible),
+            "expected_refund_krw": round(total_deductible * pension_credit_rate),
+            "max_refund_krw": round(pension_combined_limit * pension_credit_rate),
+            "add_pension_savings_krw": round(add_savings),
+            "add_irp_krw": round(add_irp),
+        },
+        "isa": {
+            "type": isa_type,
+            "tax_free_limit_krw": isa_limit,
+            "value_krw": round(isa_value),
+            "profit_krw": round(isa_profit),
+            "taxable_profit_krw": round(max(0, isa_profit - isa_limit)),
+            "pension_transfer_amount_krw": round(float(isa_transfer_amount or 0)),
+            "extra_credit_base_krw": round(min(float(isa_transfer_amount or 0) * 0.1, 3_000_000)),
+        },
+        "alerts": alerts,
+    }
+
 def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_krw_prev: float | None = None) -> dict:
     """전체 포트폴리오 요약 계산.
 
@@ -635,6 +808,8 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
     if goal_krw and goal_krw > 0:
         goal_progress = round(total_value_krw / goal_krw * 100, 2)
 
+    tax_optimization = build_tax_optimization(portfolio, accounts_data, usd_krw)
+
     # 시장 상태 (실시간 가격이 하나라도 있으면 'live', 아니면 'closed')
     market_status = "closed"
     last_trade_date = None
@@ -688,6 +863,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "asset_class_weights": _to_weights(class_totals),
         "region_weights": _to_weights(region_totals),
         "auto_buy_items": auto_buy_items,
+        "tax_optimization": tax_optimization,
         "goal_krw": goal_krw,
         "goal_progress_pct": goal_progress,
         "market_status": market_status,
