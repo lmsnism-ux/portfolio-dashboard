@@ -804,6 +804,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
             cash_total_krw += item.get("balance_krw", 0)
 
     goal_krw = portfolio.get("goal_krw")
+    long_goal_krw = portfolio.get("long_goal_krw")
     goal_progress = None
     if goal_krw and goal_krw > 0:
         goal_progress = round(total_value_krw / goal_krw * 100, 2)
@@ -865,6 +866,7 @@ def build_portfolio_summary(portfolio: dict, prices: dict, usd_krw: float, usd_k
         "auto_buy_items": auto_buy_items,
         "tax_optimization": tax_optimization,
         "goal_krw": goal_krw,
+        "long_goal_krw": long_goal_krw,
         "goal_progress_pct": goal_progress,
         "market_status": market_status,
         "day_change_label": day_change_label,

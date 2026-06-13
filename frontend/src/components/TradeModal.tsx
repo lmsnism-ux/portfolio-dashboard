@@ -115,6 +115,9 @@ export default function TradeModal({ account, holding, initialSide = 'buy', onCl
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="매수/매도 기록"
         className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >

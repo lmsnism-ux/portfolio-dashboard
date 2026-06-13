@@ -73,6 +73,9 @@ export default function TradeHistoryModal({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="체결 내역"
         className="modal-content bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[88vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >

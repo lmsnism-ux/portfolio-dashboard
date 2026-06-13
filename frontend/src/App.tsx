@@ -15,7 +15,10 @@ import TaxOptimizerCard from './components/TaxOptimizerCard';
 import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import { DashboardSkeleton } from './components/Skeletons';
+import ErrorBoundary from './components/ErrorBoundary';
 import { isLongTermAccount, fmtKRW, fmtPct, colorClass } from './utils';
+import { STORAGE_KEYS } from './constants';
+import HealthBanner from './components/HealthBanner';
 import { useAlertTriggers } from './hooks/useAlertTriggers';
 import type { AccountData, HoldingData } from './types';
 
@@ -28,11 +31,7 @@ const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
 const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
 const TradeModal        = lazy(() => import('./components/TradeModal'));
 
-const HIDE_KEY = 'pd_hide_assets';
-const DARK_KEY = 'pd_dark';
-const RE_KEY = 'pd_realestate_show';
-const DC_KEY = 'pd_dc_show';
-const LOAN_KEY = 'pd_loan_on';
+const { DARK_MODE: DARK_KEY, HIDE_ASSETS: HIDE_KEY, REAL_ESTATE_SHOW: RE_KEY, DC_SHOW: DC_KEY, LOAN_ON: LOAN_KEY } = STORAGE_KEYS;
 const TAB_KEY = 'pd_tab';
 
 export default function App() {
@@ -155,6 +154,7 @@ export default function App() {
     return (
       <GoalCard
         goalKrw={data.goal_krw}
+        longGoalKrw={data.long_goal_krw}
         currentKrw={data.total_value_krw - reEquity - dcKrw}
         progressPct={data.goal_progress_pct}
         hideAssets={hideAssets}
@@ -165,6 +165,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
+      <HealthBanner />
       {tab === 'home' && (
         <Header
           data={data}
@@ -179,7 +180,6 @@ export default function App() {
           onToggleDc={handleDcToggle}
           isRefreshing={refreshMutation.isPending}
           onAddHolding={() => {
-            // 시장 현황 편집 모드에서 + 누름 → 첫 번째 비-스냅샷 계좌를 기본으로 추가 모달
             const target = data.accounts.find(a => a.holdings.some(h => !h.is_snapshot)) ?? data.accounts[0];
             if (target) setAdding(target);
           }}
@@ -303,25 +303,27 @@ export default function App() {
 
       <BottomNav active={tab} onChange={handleTabChange} />
 
-      <Suspense fallback={null}>
-        {editing && (
-          <EditHoldingModal
-            account={editing.account}
-            holding={editing.holding}
-            onClose={() => setEditing(null)}
-          />
-        )}
-        {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
-        {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
-        {trading && (
-          <TradeModal
-            account={trading.account}
-            holding={trading.holding}
-            initialSide={trading.side}
-            onClose={() => setTrading(null)}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary name="모달">
+        <Suspense fallback={null}>
+          {editing && (
+            <EditHoldingModal
+              account={editing.account}
+              holding={editing.holding}
+              onClose={() => setEditing(null)}
+            />
+          )}
+          {adding && <AddHoldingModal account={adding} onClose={() => setAdding(null)} />}
+          {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
+          {trading && (
+            <TradeModal
+              account={trading.account}
+              holding={trading.holding}
+              initialSide={trading.side}
+              onClose={() => setTrading(null)}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }

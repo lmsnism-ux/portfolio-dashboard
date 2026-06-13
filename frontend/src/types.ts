@@ -256,6 +256,7 @@ export interface PortfolioSummary {
   auto_buy_items: AutoBuySummary[];
   tax_optimization?: TaxOptimizationSummary;
   goal_krw: number | null;
+  long_goal_krw: number | null;
   goal_progress_pct: number | null;
   market_status: 'live' | 'closed';
   day_change_label: string;

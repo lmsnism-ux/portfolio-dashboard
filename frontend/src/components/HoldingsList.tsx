@@ -397,8 +397,8 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                             {/* 뷰 모드에서도 종목 추가 버튼 상시 노출 */}
                             <button
                               onClick={() => onAdd(acc)}
+                              aria-label={`${acc.name}에 종목 추가`}
                               className="p-1.5 rounded-full bg-toss-blue-soft hover:bg-toss-blue/20 active:scale-90 transition-all"
-                              title="종목 추가"
                             >
                               <Plus size={13} className="text-toss-blue" />
                             </button>
@@ -408,24 +408,24 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => onAdd(acc)}
+                              aria-label={`${acc.name}에 종목 추가`}
                               className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
-                              title="종목 추가"
                             >
                               <Plus size={13} className="text-toss-blue" />
                             </button>
                             <button
                               onClick={() => onMoveAccount(accGlobalIdx, -1)}
                               disabled={accGlobalIdx === 0}
+                              aria-label={`${acc.name} 계좌 위로`}
                               className="p-1 rounded hover:bg-toss-bg disabled:opacity-30 active:scale-90 transition-all"
-                              title="계좌 위로"
                             >
                               <ChevronUp size={13} className="text-toss-text-tertiary" />
                             </button>
                             <button
                               onClick={() => onMoveAccount(accGlobalIdx, 1)}
                               disabled={accGlobalIdx === data.accounts.length - 1}
+                              aria-label={`${acc.name} 계좌 아래로`}
                               className="p-1 rounded hover:bg-toss-bg disabled:opacity-30 active:scale-90 transition-all"
-                              title="계좌 아래로"
                             >
                               <ChevronDown size={13} className="text-toss-text-tertiary" />
                             </button>
@@ -597,16 +597,16 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                 <div className="flex flex-col gap-0.5">
                                   <button
                                     onClick={() => onEdit(acc, h)}
+                                    aria-label={`${h.name} 수정`}
                                     className="p-1 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
-                                    title="수정"
                                   >
                                     <Pencil size={12} className="text-toss-text-tertiary" />
                                   </button>
                                   {!h.is_snapshot && (
                                     <button
                                       onClick={() => onTrade(acc, h)}
+                                      aria-label={`${h.name} 매수/매도`}
                                       className="p-1 rounded-full hover:bg-toss-bg active:scale-90 transition-all"
-                                      title="매수/매도"
                                     >
                                       <ArrowLeftRight size={12} className="text-toss-text-tertiary" />
                                     </button>

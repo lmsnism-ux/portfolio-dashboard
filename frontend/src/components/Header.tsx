@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, ArrowUp, ArrowDown, EyeOff as Hide, Trash2, Plus } from 'lucide-react';
+import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, Plus, Download } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
 import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, isPriceStale, STALE_PRICE_THRESHOLD_HOURS, type Exchange, type HoldingClass } from '../utils';
-import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding } from '../api';
+import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding, downloadCsv } from '../api';
 import {
   loadSettings as loadNotifSettings,
   saveSettings as saveNotifSettings,
@@ -11,22 +11,12 @@ import {
   getPermission,
   type NotifSettings,
 } from '../notifications';
+import { STORAGE_KEYS } from '../constants';
 
 const TickerChartModal = lazy(() => import('./TickerChartModal'));
 
-// 시장 현황 종목 사용자 정의 순서/숨김 저장 키
-const MARKET_ORDER_KEY = 'pd_market_order';
-const MARKET_HIDDEN_KEY = 'pd_market_hidden';
-
-const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
-
-function etfDisplayName(name: string): string {
-  return name
-    .replace(ETF_BRAND_RE, '')
-    .replace(/\s*INDXX\s*/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const MARKET_ORDER_KEY  = STORAGE_KEYS.MARKET_ORDER;
+const MARKET_HIDDEN_KEY = STORAGE_KEYS.MARKET_HIDDEN;
 
 interface Props {
   data: PortfolioSummary;
@@ -42,20 +32,6 @@ interface Props {
   isRefreshing: boolean;
   /** 편집 모드에서 + 누를 때 어느 계좌로 추가할지 선택 모달을 띄움 */
   onAddHolding?: () => void;
-}
-
-interface TickerItem {
-  name: string;
-  ticker: string | null;
-  pct: number;
-  krwChange: number | null;
-  price: string | null;
-  priceLabel: string;
-  category: HoldingClass;
-  exchange: Exchange;
-  shortLabel: string;
-  accentColor: string;
-  fetchedAt: string | null;
 }
 
 // 한국장 내부 노출 순서: 국내 상장 해외 ETF → TDF·혼합 → 국내 ETF (사용자 요청: 국내 ETF 최하단)
@@ -77,30 +53,6 @@ function usTickerOrder(name: string): number {
   return 99;
 }
 
-function Sparkline({ data, pct }: { data: number[]; pct: number }) {
-  if (!data || data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const W = 44, H = 18;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * W;
-    const y = H - ((v - min) / range) * H;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  return (
-    <svg width={W} height={H} className="opacity-75 shrink-0">
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={pct >= 0 ? '#2daf4e' : '#f03e3e'}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 /** 시장(한국장/미국장) 상태 + 대표 지수 큰 카드 */
 function MarketStatusCard({
@@ -371,7 +323,7 @@ export default function Header({
 
   // 우상단 메뉴 + 시장 현황 collapse + API 키/알림 모달
   const [menuOpen, setMenuOpen] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(() => localStorage.getItem('pd_market_open') === '1');
+  const [marketOpen, setMarketOpen] = useState(() => localStorage.getItem(STORAGE_KEYS.MARKET_OPEN) !== '0');
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -460,7 +412,7 @@ export default function Header({
 
   const toggleMarket = () => {
     setMarketOpen(o => {
-      localStorage.setItem('pd_market_open', !o ? '1' : '0');
+      localStorage.setItem(STORAGE_KEYS.MARKET_OPEN, !o ? '1' : '0');
       return !o;
     });
   };
@@ -575,7 +527,7 @@ export default function Header({
       {/* ── Sticky 헤더: 총자산 / 등락 / 수익 / 환율 ── */}
       <header className="sticky top-0 z-20 bg-toss-card border-b border-toss-border shadow-[var(--shadow-toss-card)]">
         {data.cache_is_stale && (
-          <div className="bg-toss-up-soft text-toss-up text-xs px-4 py-2 flex items-center gap-2">
+          <div className="bg-amber-500/10 text-amber-500 dark:text-amber-400 text-xs px-4 py-2 flex items-center gap-2">
             <AlertTriangle size={13} />
             <span>가격 데이터가 {data.cache_stale_hours}시간 동안 갱신되지 않았어요. 새로고침을 눌러보세요.</span>
           </div>
@@ -654,6 +606,13 @@ export default function Header({
                       <Key size={15} />
                       API 키 설정
                     </button>
+                    <button
+                      onClick={() => { downloadCsv().catch(e => alert(e.message)); setMenuOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-toss-bg text-left text-[13px] text-toss-text-primary border-t border-toss-border/50"
+                    >
+                      <Download size={15} />
+                      CSV 내보내기
+                    </button>
                   </div>
                 )}
               </div>
@@ -670,7 +629,13 @@ export default function Header({
                 </span>
               )}
             </div>
-            <h1 className="num text-[42px] sm:text-[48px] leading-none font-extrabold tracking-tight text-toss-text-primary">
+            <h1 className={`num leading-none font-extrabold tracking-tight text-toss-text-primary transition-all ${
+              !hideAssets && displayTotal >= 1_000_000_000_000
+                ? 'text-[28px] sm:text-[36px]'
+                : !hideAssets && displayTotal >= 100_000_000_000
+                  ? 'text-[32px] sm:text-[40px]'
+                  : 'text-[38px] sm:text-[46px]'
+            }`}>
               {hideAssets ? MASK : fmtKRW(displayTotal)}
             </h1>
             {!hideAssets && (
@@ -770,7 +735,7 @@ export default function Header({
                 onClick={toggleMarket}
                 aria-label={marketOpen ? '시장 현황 접기' : '시장 현황 펴기'}
                 aria-expanded={marketOpen}
-                className="self-start sm:self-stretch px-3 py-2 rounded-2xl bg-toss-card border border-toss-border hover:bg-toss-bg active:scale-95 transition-all shrink-0"
+                className="self-start px-3 py-2 rounded-2xl bg-toss-card border border-toss-border hover:bg-toss-bg active:scale-95 transition-all shrink-0"
               >
                 {marketOpen
                   ? <ChevronUp size={16} className="text-toss-text-tertiary" />
@@ -834,9 +799,9 @@ export default function Header({
                             </span>
                             <span className="text-[10px] text-toss-text-tertiary">{group.items.length}</span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 items-stretch">
                             {group.items.map((item, i) => (
-                              <HoldingCard
+                              <MarketHoldingCard
                                 key={item.name}
                                 item={item}
                                 hideAssets={hideAssets}
@@ -883,7 +848,7 @@ export default function Header({
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                         {usItems.map((item, i) => (
-                          <HoldingCard
+                          <MarketHoldingCard
                             key={item.name}
                             item={item}
                             hideAssets={hideAssets}
@@ -954,185 +919,3 @@ export default function Header({
   );
 }
 
-function NotifModal({ onClose }: { onClose: () => void }) {
-  const [s, setS] = useState<NotifSettings>(() => loadNotifSettings());
-  const [perm, setPerm] = useState(() => getPermission());
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
-  const enableAll = async () => {
-    const p = await requestPermission();
-    setPerm(p);
-    if (p === 'granted') {
-      const next = { ...s, enabled: true };
-      setS(next);
-      saveNotifSettings(next);
-    }
-  };
-
-  const update = (patch: Partial<NotifSettings>) => {
-    const next = { ...s, ...patch };
-    setS(next);
-    saveNotifSettings(next);
-  };
-
-  const denied = perm === 'denied';
-  const unsupported = perm === 'unsupported';
-
-  return (
-    <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-bold text-toss-text-primary mb-1">알림 설정</h2>
-        <p className="text-[12px] text-toss-text-secondary mb-4">
-          페이지가 열려 있거나 PWA가 설치된 경우 알림이 표시됩니다. (브라우저 권한 필요)
-        </p>
-
-        {unsupported ? (
-          <div className="bg-toss-bg rounded-xl p-4 text-sm text-toss-text-secondary">
-            이 브라우저는 알림 API를 지원하지 않습니다.
-          </div>
-        ) : denied ? (
-          <div className="bg-toss-up-soft rounded-xl p-4 text-sm text-toss-up">
-            브라우저에서 알림이 차단되어 있어요. 사이트 설정에서 알림을 허용해주세요.
-          </div>
-        ) : !s.enabled ? (
-          <button
-            onClick={enableAll}
-            className="w-full py-3 rounded-xl bg-toss-blue text-white font-semibold active:scale-[0.98]"
-          >
-            알림 켜기
-          </button>
-        ) : (
-          <div className="space-y-3">
-            <Row label="알림 사용">
-              <SmallToggle on={s.enabled} onChange={(v) => update({ enabled: v })} />
-            </Row>
-            <Row label="자동매수 D-1 알림">
-              <SmallToggle on={s.autobuy_d1} onChange={(v) => update({ autobuy_d1: v })} />
-            </Row>
-            <Row label="가격 변동 알림">
-              <SmallToggle on={s.price_alert} onChange={(v) => update({ price_alert: v })} />
-            </Row>
-            {s.price_alert && (
-              <div className="bg-toss-bg rounded-xl p-3 flex items-center gap-2">
-                <span className="text-xs text-toss-text-secondary">임계값</span>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  max="20"
-                  value={s.price_threshold_pct}
-                  onChange={(e) => update({ price_threshold_pct: parseFloat(e.target.value) || 3 })}
-                  className="num flex-1 bg-transparent focus:outline-none text-sm text-right text-toss-text-primary"
-                />
-                <span className="text-xs text-toss-text-tertiary">±% 초과</span>
-              </div>
-            )}
-            <p className="text-[11px] text-toss-text-tertiary leading-relaxed">
-              ⓘ 같은 종목/날짜에 대해 하루 1회만 알림이 발사됩니다.
-            </p>
-          </div>
-        )}
-
-        <button
-          onClick={onClose}
-          className="mt-5 w-full py-3 rounded-xl bg-toss-bg text-toss-text-primary font-semibold active:scale-[0.98]"
-        >
-          닫기
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between bg-toss-bg rounded-xl px-4 py-3">
-      <span className="text-sm font-medium text-toss-text-primary">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function SmallToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!on)}
-      className={`w-10 h-5 rounded-full transition-colors relative shrink-0 ${
-        on ? 'bg-toss-blue' : 'bg-toss-border'
-      }`}
-      aria-pressed={on}
-    >
-      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-        on ? 'translate-x-5' : ''
-      }`} />
-    </button>
-  );
-}
-
-function ApiKeyModal({ onClose }: { onClose: () => void }) {
-  const [draft, setDraft] = useState<string>(() => getApiKey());
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
-  const save = () => {
-    setApiKey(draft.trim());
-    onClose();
-  };
-
-  return (
-    <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-bold text-toss-text-primary mb-1">API 키 설정</h2>
-        <p className="text-[12px] text-toss-text-secondary mb-4">
-          백엔드 PORTFOLIO_API_KEY 환경변수와 동일한 값을 입력하세요. 빈 칸으로 저장하면 키를 제거합니다.
-        </p>
-        <input
-          type="password"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="API key"
-          className="w-full bg-toss-bg rounded-xl px-4 py-3 text-base text-toss-text-primary focus:outline-none focus:ring-2 focus:ring-toss-blue mb-4"
-          autoFocus
-        />
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-toss-bg text-toss-text-primary font-semibold active:scale-[0.98]">
-            취소
-          </button>
-          <button onClick={save} className="flex-[2] py-3 rounded-xl bg-toss-blue text-white font-semibold active:scale-[0.98]">
-            저장
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

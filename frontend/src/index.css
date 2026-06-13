@@ -85,6 +85,15 @@ input, button, select, textarea {
   font-family: inherit;
 }
 
+/* 스크롤바 숨김 (기간 탭 등 가로 스크롤 컨테이너) */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* 주가 전광판 스크롤 */
 @keyframes ticker-scroll {
   0%   { transform: translateX(0); }

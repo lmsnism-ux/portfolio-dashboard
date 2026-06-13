@@ -7,13 +7,16 @@ import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Any, Optional
+import csv
+import io
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from price_fetcher import refresh_all_prices, get_cached_prices
+from price_cache_store import get_price_errors
 from portfolio_calculator import load_portfolio, build_portfolio_summary, save_portfolio
 from history_store import record_snapshot_from_summary, get_history
 from history_backfill import backfill_history
@@ -171,6 +174,79 @@ def _cache_stale_hours(updated_at: str | None) -> float | None:
         return None
 
 
+@app.get("/api/health")
+async def health_check():
+    """스케줄러 상태 + 가격 갱신 시각 + 에러 티커 목록."""
+    cache = get_cached_prices()
+    stale_hours = _cache_stale_hours(cache.get("updated_at"))
+    errors = get_price_errors()
+    return {
+        "status": "ok",
+        "scheduler_running": scheduler.running,
+        "price_updated_at": cache.get("updated_at"),
+        "cache_stale_hours": round(stale_hours, 2) if stale_hours is not None else None,
+        "price_errors": errors,
+    }
+
+
+@app.get("/api/export/csv")
+async def export_csv():
+    """보유 종목 + 거래내역 CSV 다운로드."""
+    portfolio = load_portfolio()
+    cache = get_cached_prices()
+    summary = build_portfolio_summary(portfolio, cache)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # ── 보유 종목 섹션 ──
+    writer.writerow(["## 보유 종목"])
+    writer.writerow(["계좌", "종목명", "티커", "수량", "평균단가", "현재가", "평가금액(KRW)", "매입금액(KRW)", "수익률(%)"])
+    for acc in summary.get("accounts", []):
+        for h in acc.get("holdings", []):
+            writer.writerow([
+                acc.get("name", ""),
+                h.get("name", ""),
+                h.get("ticker", "") or "",
+                h.get("shares", "") if h.get("shares") is not None else "",
+                h.get("avg_price", "") if h.get("avg_price") is not None else "",
+                h.get("current_price", "") if h.get("current_price") is not None else "",
+                h.get("value_krw", ""),
+                h.get("cost_krw", "") if h.get("cost_krw") is not None else "",
+                f"{h['profit_pct']:.2f}" if h.get("profit_pct") is not None else "",
+            ])
+
+    writer.writerow([])
+
+    # ── 거래내역 섹션 ──
+    writer.writerow(["## 거래내역"])
+    writer.writerow(["날짜", "계좌", "종목명", "티커", "구분", "수량", "가격", "통화", "메모"])
+    trades = list_trades()
+    for t in trades:
+        writer.writerow([
+            t.get("traded_at", "")[:10],
+            t.get("account_name", ""),
+            t.get("name", ""),
+            t.get("ticker", "") or "",
+            "매수" if t.get("side") == "buy" else "매도",
+            t.get("shares", ""),
+            t.get("price", "") if t.get("price") is not None else "",
+            t.get("currency", ""),
+            t.get("note", "") or "",
+        ])
+
+    today = datetime.now().strftime("%Y%m%d")
+    output.seek(0)
+    # UTF-8 BOM: Excel에서 한글 깨짐 방지
+    content = "﻿" + output.getvalue()
+
+    return StreamingResponse(
+        iter([content.encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=portfolio_{today}.csv"},
+    )
+
+
 @app.get("/api/portfolio", dependencies=[Depends(require_read_auth)])
 async def get_portfolio():
     """전체 포트폴리오 현황 반환"""
@@ -293,7 +369,8 @@ async def update_holding(update: HoldingUpdate):
 
 
 class GoalUpdate(BaseModel):
-    goal_krw: int
+    goal_krw: Optional[int] = None
+    long_goal_krw: Optional[int] = None
 
 
 class HoldingCreate(BaseModel):
@@ -478,12 +555,21 @@ async def import_portfolio(request: Request):
 
 @app.patch("/api/portfolio/goal", dependencies=[Depends(require_api_key)])
 async def update_goal(update: GoalUpdate):
-    """목표 자산 금액 설정"""
+    """단기/장기 목표 자산 금액 설정"""
     try:
         portfolio = load_portfolio()
-        portfolio["goal_krw"] = int(update.goal_krw)
+        if update.goal_krw is not None:
+            portfolio["goal_krw"] = int(update.goal_krw)
+        if update.long_goal_krw is not None:
+            portfolio["long_goal_krw"] = int(update.long_goal_krw)
+        elif update.long_goal_krw == 0:
+            portfolio.pop("long_goal_krw", None)
         save_portfolio(portfolio)
-        return {"status": "ok", "goal_krw": portfolio["goal_krw"]}
+        return {
+            "status": "ok",
+            "goal_krw": portfolio.get("goal_krw"),
+            "long_goal_krw": portfolio.get("long_goal_krw"),
+        }
     except Exception as e:
         logger.error(f"goal 수정 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -731,11 +817,6 @@ async def force_refresh():
         return {"status": "ok", "updated_at": cache.get("updated_at")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/health")
-async def health():
-    return {"status": "ok"}
-
 
 # ─────────────────────────────────────────────────────
 # 체결(매수/매도) 내역 엔드포인트 — Phase 6

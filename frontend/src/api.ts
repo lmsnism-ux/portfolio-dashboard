@@ -96,11 +96,11 @@ export async function patchHolding(body: HoldingPatch): Promise<void> {
   }
 }
 
-export async function patchGoal(goal_krw: number): Promise<void> {
+export async function patchGoal(body: { goal_krw?: number; long_goal_krw?: number }): Promise<void> {
   const res = await writeFetch(`${BASE}/portfolio/goal`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ goal_krw }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
 }
@@ -281,6 +281,24 @@ export async function deleteTrade(id: number): Promise<void> {
   }
 }
 
+export interface HealthStatus {
+  status: string;
+  scheduler_running: boolean;
+  price_updated_at: string | null;
+  cache_stale_hours: number | null;
+  price_errors: { ticker: string; error_count: number; last_error: string }[];
+}
+
+export async function fetchHealth(): Promise<HealthStatus | null> {
+  try {
+    const res = await fetch(`${BASE}/health`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function reorderAccounts(names: string[]): Promise<void> {
   const res = await writeFetch(`${BASE}/portfolio/accounts/order`, {
     method: 'PATCH',
@@ -288,4 +306,20 @@ export async function reorderAccounts(names: string[]): Promise<void> {
     body: JSON.stringify({ names }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
+}
+
+export async function downloadCsv(): Promise<void> {
+  const key = getApiKey();
+  const headers: Record<string, string> = key ? { 'X-API-Key': key } : {};
+  const res = await fetch(`${BASE}/export/csv`, { headers });
+  if (!res.ok) throw new Error(`CSV 다운로드 실패 (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `portfolio_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

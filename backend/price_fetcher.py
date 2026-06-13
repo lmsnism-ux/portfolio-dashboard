@@ -8,13 +8,17 @@ from pathlib import Path
 import requests
 import yfinance as yf  # noqa: F401
 from bs4 import BeautifulSoup
+from price_cache_store import load_cache, save_cache, record_price_error, migrate_from_json
 
 logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path(os.environ.get("PORTFOLIO_DATA_DIR", str(Path(__file__).parent)))
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_FILE = _DATA_DIR / "price_cache.json"
 PORTFOLIO_FILE = _DATA_DIR / "portfolio.json"
+
+# 기존 JSON 캐시 파일 → SQLite 마이그레이션 (최초 1회)
+_OLD_CACHE = _DATA_DIR / "price_cache.json"
+migrate_from_json(_OLD_CACHE)
 KST = timezone(timedelta(hours=9))
 
 # 미국 동부 시간: 서머타임(EDT=-4) / 겨울(EST=-5) 자동 전환.
@@ -60,16 +64,6 @@ def _collect_tickers_from_portfolio() -> tuple[list[str], list[str]]:
         logger.warning(f"티커 수집 실패 (기본값 사용): {e}")
     return list(kr), list(us)
 
-def _load_cache() -> dict:
-    if CACHE_FILE.exists():
-        try:
-            return json.loads(CACHE_FILE.read_text())
-        except Exception:
-            pass
-    return {"prices": {}, "usd_krw": None, "updated_at": None}
-
-def _save_cache(data: dict):
-    CACHE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 def fetch_usd_krw():
     """USD/KRW 환율 + 전일 환율 조회.
@@ -299,8 +293,8 @@ def fetch_us_stock_price(ticker: str):
         return None
 
 def refresh_all_prices() -> dict:
-    """모든 가격 갱신 후 캐시 저장. portfolio.json에서 티커를 동적으로 수집."""
-    cache = _load_cache()
+    """모든 가격 갱신 후 SQLite 캐시 저장. portfolio.json에서 티커를 동적으로 수집."""
+    cache = load_cache()
     prices = cache.get("prices", {})
 
     # 환율
@@ -321,6 +315,8 @@ def refresh_all_prices() -> dict:
         if result:
             prices[ticker] = result
             logger.info(f"KR ETF {ticker}: {result['price']}")
+        else:
+            record_price_error(ticker, "한국 ETF 가격 조회 실패 (네이버/Yahoo 모두 실패)")
         time.sleep(0.5)
 
     # 미국 ETF / 주식
@@ -329,12 +325,14 @@ def refresh_all_prices() -> dict:
         if result:
             prices[ticker] = result
             logger.info(f"US {ticker}: {result['price']}")
+        else:
+            record_price_error(ticker, "미국 주식 가격 조회 실패")
         time.sleep(0.3)
 
     cache["prices"] = prices
     cache["updated_at"] = datetime.now(KST).isoformat()
-    _save_cache(cache)
+    save_cache(cache)
     return cache
 
 def get_cached_prices() -> dict:
-    return _load_cache()
+    return load_cache()

@@ -39,7 +39,7 @@ interface ToolTipBoxProps {
 
 const ToolTipBox = ({ active, payload, hideAssets }: ToolTipBoxProps) => {
   if (!active || !payload?.length) return null;
-  const p: HistoryPoint = payload[0].payload;
+  const p: HistoryPoint = payload[0].payload as HistoryPoint;
   return (
     <div className="bg-toss-card border border-toss-border rounded-xl px-3 py-2.5 shadow-[var(--shadow-toss-pop)]">
       <p className="text-[11px] text-toss-text-tertiary mb-1">{p.date}</p>
@@ -384,18 +384,18 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2 justify-end min-w-0">
             <button
               onClick={() => backfillMutation.mutate()}
               disabled={backfillMutation.isPending}
-              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50"
-              title="과거 30일 다시 계산"
+              aria-label="과거 30일 재계산"
+              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all disabled:opacity-50 shrink-0"
             >
               <RotateCcw size={14} className={`text-toss-text-tertiary ${backfillMutation.isPending ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* 기간 탭 */}
-            <div className="flex bg-toss-bg rounded-full p-0.5 gap-0.5 flex-wrap">
+            {/* 기간 탭 — 모바일에서 가로 스크롤 */}
+            <div role="tablist" aria-label="조회 기간" className="flex bg-toss-bg rounded-full p-0.5 gap-0.5 overflow-x-auto scrollbar-none min-w-0 max-w-full">
               {RANGES.map((r) => {
                 const st = tabDataStatus[r.key] ?? 'no-extra';
                 const isActive = range === r.key;
@@ -403,11 +403,13 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
                 return (
                   <button
                     key={r.key}
+                    role="tab"
+                    aria-selected={isActive}
                     onClick={() => {
                       setRange(r.key);
                       if (r.key !== 'CUSTOM') setShowCustom(false);
                     }}
-                    className={`relative px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
+                    className={`relative shrink-0 px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
                       isActive
                         ? 'bg-toss-blue text-white shadow-sm'
                         : hasData
@@ -417,21 +419,23 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
                   >
                     {r.label}
                     {!hasData && !isActive && r.key !== 'ALL' && (
-                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full" aria-hidden="true" />
                     )}
                   </button>
                 );
               })}
               {/* 직접 기간 설정 버튼 */}
               <button
+                role="tab"
+                aria-selected={range === 'CUSTOM'}
                 onClick={() => { setRange('CUSTOM'); setShowCustom(true); }}
-                className={`relative px-2.5 py-1 text-[11px] rounded-full transition-all font-medium flex items-center gap-1 ${
+                className={`relative shrink-0 px-2.5 py-1 text-[11px] rounded-full transition-all font-medium flex items-center gap-1 ${
                   range === 'CUSTOM'
                     ? 'bg-toss-blue text-white shadow-sm'
                     : 'text-toss-text-secondary hover:text-toss-text-primary'
                 }`}
               >
-                <CalendarDays size={10} />
+                <CalendarDays size={10} aria-hidden="true" />
                 직접
               </button>
             </div>

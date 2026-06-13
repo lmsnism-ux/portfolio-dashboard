@@ -75,6 +75,9 @@ export default function TickerChartModal({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="주가 차트"
         className="modal-content bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >

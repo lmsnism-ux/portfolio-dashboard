@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { PortfolioSummary } from '../types';
 import DonutChart from './DonutChart';
 import { fmtKRW } from '../utils';
@@ -78,12 +78,21 @@ const RISK_DISPLAY: Record<RiskLevel, { title: string; desc: string }> = {
 const RISK_CONFIG: Record<RiskLevel, { color: string; bg: string; text: string }> = {
   '위험자산': { color: '#F04452', bg: 'bg-toss-up-soft', text: 'text-toss-up' },
   '혼합자산': { color: '#F5A623', bg: 'bg-amber-500/10', text: 'text-amber-400' },
-  '안전자산': { color: '#3182F6', bg: 'bg-toss-blue-soft', text: 'text-toss-down' },
+  '안전자산': { color: '#14B8A6', bg: 'bg-teal-500/10', text: 'text-teal-500' },
 };
 
 const RISK_ORDER: RiskLevel[] = ['위험자산', '혼합자산', '안전자산'];
 
+const DONUT_TABS = [
+  { key: 'account', label: '계좌별' },
+  { key: 'class',   label: '자산군' },
+  { key: 'region',  label: '지역별' },
+] as const;
+type DonutTab = typeof DONUT_TABS[number]['key'];
+
 export default function AllocationCard({ data, hideAssets }: Props) {
+  const [activeTab, setActiveTab] = useState<DonutTab>('account');
+
   const styleGroups = useMemo(() => {
     const groups: Record<string, { value: number; names: Set<string> }> = {};
     data.accounts.flatMap(a => a.holdings).forEach(h => {
@@ -140,10 +149,40 @@ export default function AllocationCard({ data, hideAssets }: Props) {
 
   return (
     <section className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <DonutChart data={accountItems} title="계좌별 비중" hideAssets={hideAssets} compact showAll />
-        <DonutChart data={classItems} title="자산군 비중" hideAssets={hideAssets} compact />
-        <DonutChart data={regionItems} title="지역 비중" hideAssets={hideAssets} compact />
+      {/* 데스크톱: 3개 나란히 / 모바일: 탭 전환 */}
+      <div className="bg-toss-card rounded-[var(--radius-toss-lg)] border border-toss-border shadow-[var(--shadow-toss-card)] overflow-hidden">
+        {/* 모바일 탭 헤더 (sm 이상에서는 숨김) */}
+        <div role="tablist" aria-label="자산 배분 기준" className="flex sm:hidden border-b border-toss-border">
+          {DONUT_TABS.map(tab => (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${
+                activeTab === tab.key
+                  ? 'text-toss-blue border-b-2 border-toss-blue'
+                  : 'text-toss-text-tertiary'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 모바일: 선택된 탭만 표시 */}
+        <div className="sm:hidden p-3">
+          {activeTab === 'account' && <DonutChart data={accountItems} title="계좌별 비중" hideAssets={hideAssets} compact showAll />}
+          {activeTab === 'class'   && <DonutChart data={classItems}   title="자산군 비중" hideAssets={hideAssets} compact />}
+          {activeTab === 'region'  && <DonutChart data={regionItems}  title="지역 비중"   hideAssets={hideAssets} compact />}
+        </div>
+
+        {/* 데스크톱: 3개 나란히 */}
+        <div className="hidden sm:grid sm:grid-cols-3 gap-0 divide-x divide-toss-border">
+          <div className="p-3"><DonutChart data={accountItems} title="계좌별 비중" hideAssets={hideAssets} compact showAll /></div>
+          <div className="p-3"><DonutChart data={classItems}   title="자산군 비중" hideAssets={hideAssets} compact /></div>
+          <div className="p-3"><DonutChart data={regionItems}  title="지역 비중"   hideAssets={hideAssets} compact /></div>
+        </div>
       </div>
 
       {/* 투자 성향 분류 */}
