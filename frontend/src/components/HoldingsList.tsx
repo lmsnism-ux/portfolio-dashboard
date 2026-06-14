@@ -470,7 +470,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                                   />
                                 )}
                               </div>
-                              {h.ticker && (
+                              {h.ticker && h.ticker !== h.name && (
                                 <p className="text-[11px] text-toss-text-tertiary mt-0.5">{h.ticker}</p>
                               )}
                               {/* 보유수량 · 평단가 · 현재가 */}
