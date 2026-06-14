@@ -7,9 +7,14 @@ __pycache__/
 
 # Data / cache (개인 데이터 — 레포에 포함 안 함)
 backend/price_cache.json
+backend/price_cache.json.bak
+backend/price_cache.db
 backend/history.db
 backend/portfolio.json
 backend/backups/
+
+# Preview 도구 로컬 설정
+frontend/.claude/
 
 # Node
 node_modules/

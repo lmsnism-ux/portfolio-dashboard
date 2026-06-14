@@ -380,6 +380,8 @@ class HoldingCreate(BaseModel):
     shares: Optional[float] = None
     avg_price_krw: Optional[float] = None
     avg_price_usd: Optional[float] = None
+    snapshot_value_krw: Optional[float] = None   # 예적금/현금 잔액 직접 입력
+    snapshot_value_usd: Optional[float] = None
     asset_class: Optional[str] = None
     region: Optional[str] = None
     asset_type: Optional[str] = None
@@ -420,6 +422,10 @@ async def add_holding(create: HoldingCreate):
             new_holding["avg_price_krw"] = create.avg_price_krw
         if create.avg_price_usd is not None:
             new_holding["avg_price_usd"] = create.avg_price_usd
+        if create.snapshot_value_krw is not None:
+            new_holding["snapshot_value_krw"] = create.snapshot_value_krw
+        if create.snapshot_value_usd is not None:
+            new_holding["snapshot_value_usd"] = create.snapshot_value_usd
         if create.asset_class:
             new_holding["asset_class"] = create.asset_class
         if create.region:

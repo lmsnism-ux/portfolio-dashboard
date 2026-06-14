@@ -112,6 +112,8 @@ export interface HoldingCreate {
   shares?: number | null;
   avg_price_krw?: number | null;
   avg_price_usd?: number | null;
+  snapshot_value_krw?: number | null;
+  snapshot_value_usd?: number | null;
   asset_class?: string | null;
   region?: string | null;
   asset_type?: string | null;

@@ -2,15 +2,12 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Moon, Sun, Eye, EyeOff, AlertTriangle, MoreVertical, Key, ChevronDown, ChevronUp, Bell, Pencil, Plus, Download } from 'lucide-react';
 import type { HoldingData, PortfolioSummary } from '../types';
-import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, isPriceStale, STALE_PRICE_THRESHOLD_HOURS, type Exchange, type HoldingClass } from '../utils';
-import { fetchSparkline, getApiKey, setApiKey, fetchMarketIndices, deleteHolding, downloadCsv } from '../api';
-import {
-  loadSettings as loadNotifSettings,
-  saveSettings as saveNotifSettings,
-  requestPermission,
-  getPermission,
-  type NotifSettings,
-} from '../notifications';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, relativeTime, fmtAbsTime, classifyHolding, getMarketStatus, applyDisplayToggles, type Exchange, type HoldingClass } from '../utils';
+import { fetchSparkline, fetchMarketIndices, deleteHolding, downloadCsv } from '../api';
+import Sparkline from './market/Sparkline';
+import MarketHoldingCard, { type TickerItem } from './market/MarketHoldingCard';
+import ApiKeyModal from './modals/ApiKeyModal';
+import NotifModal from './modals/NotifModal';
 import { STORAGE_KEYS } from '../constants';
 
 const TickerChartModal = lazy(() => import('./TickerChartModal'));
@@ -140,151 +137,6 @@ function MarketStatusCard({
       {clickable && (
         <p className="text-[10px] text-toss-blue/70 mt-0.5">탭하여 차트 보기 →</p>
       )}
-    </button>
-  );
-}
-
-/** 보유 종목 카드 — 카테고리 라벨 + 등락률·등락금액 동시 표시 + 클릭/편집 컨트롤 */
-function HoldingCard({
-  item, hideAssets, editing, isHidden, isFirst, isLast, pendingDelete,
-  onClick, onMoveUp, onMoveDown, onToggleHidden, onAskDelete, onConfirmDelete, onCancelDelete,
-}: {
-  item: TickerItem;
-  hideAssets: boolean;
-  editing?: boolean;
-  isHidden?: boolean;
-  isFirst?: boolean;
-  isLast?: boolean;
-  pendingDelete?: boolean;
-  onClick?: () => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  onToggleHidden?: () => void;
-  onAskDelete?: () => void;
-  onConfirmDelete?: () => void;
-  onCancelDelete?: () => void;
-}) {
-  const isPos = item.pct >= 0;
-  const sign = isPos ? '+' : '';
-
-  if (editing) {
-    return (
-      <div
-        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-opacity ${
-          isHidden ? 'opacity-40' : ''
-        } ${pendingDelete ? 'bg-toss-down-soft border-toss-down/40' : isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
-      >
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
-            {etfDisplayName(item.name)}
-          </p>
-          {pendingDelete ? (
-            <p className="text-[10px] text-toss-down font-semibold mt-0.5">정말 삭제할까요? 보유 기록도 사라져요</p>
-          ) : (
-            <span
-              className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
-              style={{ background: item.accentColor }}
-            >
-              {item.shortLabel}
-            </span>
-          )}
-        </div>
-        {pendingDelete ? (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={onConfirmDelete}
-              className="text-[11px] font-semibold text-white bg-toss-down px-2.5 py-1 rounded-full active:scale-95"
-            >삭제</button>
-            <button
-              onClick={onCancelDelete}
-              className="text-[11px] text-toss-text-tertiary px-2.5 py-1 rounded-full border border-toss-border active:scale-95"
-            >취소</button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={onAskDelete}
-              aria-label="삭제"
-              className="p-1.5 rounded-full hover:bg-toss-down/10 active:scale-90"
-            >
-              <Trash2 size={13} className="text-toss-down" />
-            </button>
-            <button
-              onClick={onToggleHidden}
-              aria-label={isHidden ? '표시' : '숨김'}
-              className="p-1.5 rounded-full hover:bg-toss-bg active:scale-90"
-            >
-              {isHidden ? <Eye size={13} className="text-toss-text-secondary" /> : <Hide size={13} className="text-toss-text-tertiary" />}
-            </button>
-            <div className="flex flex-col gap-0">
-              <button
-                onClick={onMoveUp}
-                disabled={isFirst}
-                aria-label="위로"
-                className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
-              >
-                <ArrowUp size={12} className="text-toss-text-tertiary" />
-              </button>
-              <button
-                onClick={onMoveDown}
-                disabled={isLast}
-                aria-label="아래로"
-                className="p-0.5 rounded hover:bg-toss-bg disabled:opacity-20 active:scale-90"
-              >
-                <ArrowDown size={12} className="text-toss-text-tertiary" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`text-left w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${
-        onClick ? 'hover:scale-[1.01] active:scale-[0.99] cursor-pointer' : 'cursor-default'
-      } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
-            {etfDisplayName(item.name)}
-          </p>
-          {isPriceStale(item.fetchedAt) && (
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
-              title={`가격 데이터가 ${STALE_PRICE_THRESHOLD_HOURS}시간 이상 갱신되지 않았어요 (${relativeTime(item.fetchedAt)})`}
-              aria-label="가격 데이터 오래됨"
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-          <span
-            className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
-            style={{ background: item.accentColor }}
-          >
-            {item.shortLabel}
-          </span>
-          {item.price && (
-            <span className="text-[10px] text-toss-text-tertiary truncate">
-              {item.price}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="text-right shrink-0">
-        <p className={`num text-[14px] font-extrabold leading-tight ${colorClass(item.pct)}`}>
-          {sign}{item.pct.toFixed(2)}%
-        </p>
-        {item.krwChange !== null && !hideAssets && (
-          <p className={`num text-[10px] mt-0.5 ${colorClass(item.krwChange)}`}>
-            {sign}{fmtKRW(item.krwChange)}
-          </p>
-        )}
-      </div>
     </button>
   );
 }
