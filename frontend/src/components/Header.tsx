@@ -491,9 +491,8 @@ export default function Header({
               {hideAssets ? MASK : fmtKRW(displayTotal)}
             </h1>
             {!hideAssets && (
-              <p className="num text-xs text-toss-text-tertiary mt-1.5 flex items-center gap-2">
+              <p className="num text-xs text-toss-text-tertiary mt-1.5">
                 {fmtKRWFull(displayTotal)}
-                {!dcOn && <span className="text-indigo-400 font-medium">· 퇴직연금 제외</span>}
               </p>
             )}
           </div>

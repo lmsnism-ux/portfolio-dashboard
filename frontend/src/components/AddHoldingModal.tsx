@@ -230,7 +230,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
           )}
 
           {mutation.isError && (
-            <p className="text-xs text-toss-down">추가 실패: {(mutation.error as Error).message}</p>
+            <p className="text-xs text-toss-up">추가 실패: {(mutation.error as Error).message}</p>
           )}
         </div>
 
