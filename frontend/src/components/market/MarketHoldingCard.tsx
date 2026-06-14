@@ -109,9 +109,9 @@ export default function MarketHoldingCard({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left w-full flex items-start justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${
-        onClick ? 'hover:scale-[1.01] active:scale-[0.99] cursor-pointer' : 'cursor-default'
-      } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
+      className={`text-left w-full flex items-start justify-between gap-2 px-3.5 py-3 rounded-xl border bg-toss-card border-toss-border transition-all ${
+        onClick ? 'hover:border-toss-text-tertiary/30 active:scale-[0.99] cursor-pointer' : 'cursor-default'
+      }`}
     >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold text-toss-text-primary leading-snug truncate">
