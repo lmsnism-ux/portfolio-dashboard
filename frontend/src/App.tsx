@@ -16,7 +16,7 @@ import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
 import { DashboardSkeleton } from './components/Skeletons';
 import ErrorBoundary from './components/ErrorBoundary';
-import { isLongTermAccount, fmtKRW, fmtPct, colorClass } from './utils';
+import { isLongTermAccount, fmtKRW, fmtPct, colorClass, applyDisplayToggles } from './utils';
 import { STORAGE_KEYS } from './constants';
 import HealthBanner from './components/HealthBanner';
 import { useAlertTriggers } from './hooks/useAlertTriggers';
@@ -168,6 +168,9 @@ export default function App() {
     );
   })();
 
+  // 홈과 동일한 표시 규칙(부동산·대출·퇴직연금 토글)을 자산 탭 헤더에도 적용
+  const display = applyDisplayToggles(data, { dcOn, realEstateOn, loanOn });
+
   return (
     <div className="min-h-screen bg-toss-bg transition-colors">
       <HealthBanner />
@@ -198,14 +201,14 @@ export default function App() {
           {tab === 'assets' && (
             <div className="mt-1.5">
               <p className="num text-[32px] font-bold text-toss-text-primary leading-tight">
-                {hideAssets ? '•••••' : fmtKRW(data.total_value_krw)}
+                {hideAssets ? '•••••' : fmtKRW(display.total)}
               </p>
               {!hideAssets && (
-                <p className={`num text-sm font-semibold mt-0.5 ${colorClass(data.total_day_change_krw)}`}>
+                <p className={`num text-sm font-semibold mt-0.5 ${colorClass(display.dayChg)}`}>
                   오늘{' '}
-                  {data.total_day_change_krw >= 0 ? '+' : ''}
-                  {fmtKRW(data.total_day_change_krw)}
-                  {data.total_day_change_pct != null && ` (${fmtPct(data.total_day_change_pct)})`}
+                  {display.dayChg >= 0 ? '+' : ''}
+                  {fmtKRW(display.dayChg)}
+                  {` (${fmtPct(display.dayPct)})`}
                 </p>
               )}
             </div>

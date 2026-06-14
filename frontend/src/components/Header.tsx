@@ -497,45 +497,41 @@ export default function Header({
             )}
           </div>
 
-          {/* 오늘 등락 / 누적 수익 / 환율 */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-[11px] text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
-                {data.market_status === 'closed' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
-                )}
-                {data.market_status === 'live' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-toss-up animate-pulse" title="장중" />
-                )}
-              </div>
-              <span className={`num text-sm font-bold ${dayColor}`}>
-                {hideAssets ? MASK : (displayDayChg >= 0 ? '+' : '') + fmtKRW(displayDayChg)}
-              </span>
-              <span className={`num text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-                displayDayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
-              }`}>
-                {fmtPct(displayDayPct)}
-              </span>
-            </div>
+          {/* 오늘 등락 — 주요 지표 (크게) */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-toss-text-tertiary">{data.day_change_label || '오늘'}</span>
+            {data.market_status === 'closed' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-toss-text-tertiary/50" title="휴장" />
+            )}
+            {data.market_status === 'live' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-toss-up animate-pulse" title="장중" />
+            )}
+            <span className={`num text-[15px] font-bold ${dayColor}`}>
+              {hideAssets ? MASK : (displayDayChg >= 0 ? '+' : '') + fmtKRW(displayDayChg)}
+            </span>
+            <span className={`num text-xs px-1.5 py-0.5 rounded-md font-semibold ${
+              displayDayPct >= 0 ? 'bg-toss-up-soft text-toss-up' : 'bg-toss-down-soft text-toss-down'
+            }`}>
+              {fmtPct(displayDayPct)}
+            </span>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-toss-text-tertiary">누적 수익</span>
-              <span className={`num text-sm font-bold ${profitColor}`}>
+          {/* 누적 수익 · 환율 — 보조 지표 (작게) */}
+          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap mt-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="text-toss-text-tertiary">누적 수익</span>
+              <span className={`num font-semibold ${profitColor}`}>
                 {hideAssets ? MASK : (displayProfit >= 0 ? '+' : '') + fmtKRW(displayProfit)}
-              </span>
-              <span className={`num text-xs font-semibold ${profitColor}`}>
-                {fmtPct(displayProfitPct)}
+                {' '}{fmtPct(displayProfitPct)}
               </span>
             </div>
-
-            <div className="flex items-center gap-1.5 ml-auto">
-              <span className="text-[11px] text-toss-text-tertiary">USD/KRW</span>
-              <span className="num text-sm font-semibold text-toss-text-secondary">
+            <div className="flex items-center gap-1.5">
+              <span className="text-toss-text-tertiary">USD/KRW</span>
+              <span className="num font-semibold text-toss-text-secondary">
                 {data.usd_krw?.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
               </span>
               {data.usd_krw_prev && (
-                <span className={`num text-[11px] font-medium ${colorClass(data.usd_krw - data.usd_krw_prev)}`}>
+                <span className={`num font-medium ${colorClass(data.usd_krw - data.usd_krw_prev)}`}>
                   {fmtPct(((data.usd_krw - data.usd_krw_prev) / data.usd_krw_prev) * 100)}
                 </span>
               )}
