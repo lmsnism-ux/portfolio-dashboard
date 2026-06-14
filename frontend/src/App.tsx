@@ -97,6 +97,9 @@ export default function App() {
     queryFn: fetchPortfolio,
     refetchInterval: 7 * 60 * 1000,
     staleTime: 5 * 60 * 1000,
+    // Render 무료 서버가 절전에서 깨어나는 데 30~60초 걸릴 수 있어 넉넉히 재시도
+    retry: 6,
+    retryDelay: (i) => Math.min(1000 * 2 ** i, 8000),
   });
 
   // 자동매수 D-1 + 가격 변동 임계값 알림 (메뉴에서 활성화 시)
@@ -129,10 +132,12 @@ export default function App() {
   if (isError || !data) {
     return (
       <div className="min-h-screen bg-toss-bg flex items-center justify-center px-6">
-        <div className="text-center">
-          <p className="text-lg font-bold text-toss-text-primary mb-2">데이터를 불러오지 못했어요</p>
-          <p className="text-sm text-toss-text-secondary mb-5">
-            백엔드 서버(포트 8000)가 실행 중인지 확인해주세요
+        <div className="text-center max-w-xs">
+          <p className="text-lg font-bold text-toss-text-primary mb-2">잠시만요, 서버를 깨우는 중이에요</p>
+          <p className="text-sm text-toss-text-secondary mb-5 leading-relaxed">
+            무료 서버는 한동안 안 쓰면 절전 모드로 들어가요.
+            처음 열 때 최대 1분 정도 걸릴 수 있어요.
+            잠시 후 아래 버튼을 눌러주세요.
           </p>
           <button
             onClick={() => queryClient.invalidateQueries({ queryKey: ['portfolio'] })}
