@@ -4,7 +4,7 @@ import type { HoldingClass } from '../../utils';
 
 const ETF_BRAND_RE = /^(TIGER|KODEX|KBSTAR|HANARO|SOL|ACE|ARIRANG|KOSEF|WOORI|MIRAE)\s+/i;
 
-export function etfDisplayName(name: string): string {
+function etfDisplayName(name: string): string {
   return name
     .replace(ETF_BRAND_RE, '')
     .replace(/\s*INDXX\s*/gi, '')
