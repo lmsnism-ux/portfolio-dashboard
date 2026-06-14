@@ -71,7 +71,7 @@ export default function NotifModal({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="notif-modal-title"
-        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
+        className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="notif-modal-title" className="text-lg font-bold text-toss-text-primary mb-1">알림 설정</h2>

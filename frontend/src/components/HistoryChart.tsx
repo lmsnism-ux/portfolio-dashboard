@@ -273,7 +273,7 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
             투자 수익 확인
           </p>
           <span
-            className="text-[9px] text-toss-text-tertiary/70 inline-flex items-center gap-0.5"
+            className="text-xs text-toss-text-tertiary/70 inline-flex items-center gap-1"
             title="‘오늘’은 직전 영업일 종가 대비 실시간 등락이고, ‘이번달/올해’는 일별 스냅샷 차이입니다. 측정 기준이 달라 같은 날 다른 값일 수 있어요."
           >
             <Info size={9} />
@@ -315,7 +315,7 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
               </div>
               {annualStats.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-toss-border/50">
-                  <p className="text-[10px] font-semibold text-toss-text-tertiary tracking-widest uppercase mb-2">연도별 수익</p>
+                  <p className="text-xs font-semibold text-toss-text-tertiary tracking-widest uppercase mb-2">연도별 수익</p>
                   <div className="flex gap-2">
                     {annualStats.map(s => (
                       <div key={s.year} className="flex-1 bg-toss-bg rounded-xl px-3 py-2.5">
@@ -409,7 +409,7 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
                       setRange(r.key);
                       if (r.key !== 'CUSTOM') setShowCustom(false);
                     }}
-                    className={`relative shrink-0 px-2.5 py-1 text-[11px] rounded-full transition-all font-medium ${
+                    className={`relative shrink-0 min-h-10 px-3 text-xs rounded-full transition-all font-medium ${
                       isActive
                         ? 'bg-toss-blue text-white shadow-sm'
                         : hasData
@@ -429,7 +429,7 @@ export default function HistoryChart({ data, hideAssets, dcOn, realEstateOn, loa
                 role="tab"
                 aria-selected={range === 'CUSTOM'}
                 onClick={() => { setRange('CUSTOM'); setShowCustom(true); }}
-                className={`relative shrink-0 px-2.5 py-1 text-[11px] rounded-full transition-all font-medium flex items-center gap-1 ${
+                className={`relative shrink-0 min-h-10 px-3 text-xs rounded-full transition-all font-medium flex items-center gap-1 ${
                   range === 'CUSTOM'
                     ? 'bg-toss-blue text-white shadow-sm'
                     : 'text-toss-text-secondary hover:text-toss-text-primary'

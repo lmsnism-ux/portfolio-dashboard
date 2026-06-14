@@ -1,10 +1,11 @@
-import { Home, PieChart, TrendingUp, Menu } from 'lucide-react';
+import { ChartNoAxesCombined, Home, Menu, PieChart, TrendingUp } from 'lucide-react';
 
-export type TabKey = 'home' | 'assets' | 'market' | 'more';
+export type TabKey = 'home' | 'assets' | 'analysis' | 'market' | 'more';
 
 const TABS: { key: TabKey; label: string; Icon: typeof Home }[] = [
   { key: 'home',   label: '홈',     Icon: Home },
   { key: 'assets', label: '자산',   Icon: PieChart },
+  { key: 'analysis', label: '분석', Icon: ChartNoAxesCombined },
   { key: 'market', label: '시장',   Icon: TrendingUp },
   { key: 'more',   label: '더보기', Icon: Menu },
 ];
@@ -27,7 +28,7 @@ export default function BottomNav({ active, onChange }: Props) {
                 onChange(key);
                 window.scrollTo({ top: 0 });
               }}
-              className={`flex-1 flex flex-col items-center gap-0.5 pt-2.5 pb-2 transition-colors ${
+              className={`min-h-14 flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
                 isActive ? 'text-toss-text-primary' : 'text-toss-text-tertiary'
               }`}
               aria-label={label}
@@ -38,7 +39,7 @@ export default function BottomNav({ active, onChange }: Props) {
                 strokeWidth={isActive ? 2.4 : 1.8}
                 className="transition-transform active:scale-90"
               />
-              <span className={`text-[10px] ${isActive ? 'font-bold' : 'font-medium'}`}>
+              <span className={`text-xs ${isActive ? 'font-bold' : 'font-medium'}`}>
                 {label}
               </span>
             </button>

@@ -64,7 +64,7 @@ export default function AddAccountModal({ onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="계좌 추가"
-        className="modal-content bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[92vh] overflow-y-auto"
+        className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between">

@@ -76,7 +76,7 @@ export default function TradeHistoryModal({
         role="dialog"
         aria-modal="true"
         aria-label="체결 내역"
-        className="modal-content bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[88vh] overflow-y-auto"
+        className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between border-b border-toss-border/60">

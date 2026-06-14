@@ -78,7 +78,7 @@ export default function TickerChartModal({
         role="dialog"
         aria-modal="true"
         aria-label="주가 차트"
-        className="modal-content bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] max-h-[90vh] overflow-y-auto"
+        className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}

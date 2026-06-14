@@ -223,16 +223,16 @@ export default function AllocationCard({ data, hideAssets }: Props) {
                 <div key={g.style} className={`rounded-xl px-3 py-2.5 ${cfg.bg}`}>
                   <div className="flex items-center gap-1 mb-1">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.color }} />
-                    <span className={`text-[10px] font-semibold ${cfg.text}`}>{cfg.label}</span>
+                  <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
                   </div>
                   {cfg.desc && (
-                    <p className={`text-[9px] ${cfg.text} opacity-60 mb-1 leading-tight`}>{cfg.desc}</p>
+                    <p className={`text-xs ${cfg.text} opacity-70 mb-1 leading-tight`}>{cfg.desc}</p>
                   )}
                   <p className={`num text-sm font-bold ${cfg.text}`}>{g.pct.toFixed(1)}%</p>
                   {!hideAssets && (
                     <p className={`num text-[10px] mt-0.5 ${cfg.text} opacity-70`}>{fmtKRW(g.value)}</p>
                   )}
-                  <p className="text-[9px] text-toss-text-tertiary mt-1.5 leading-tight">
+                  <p className="text-xs text-toss-text-tertiary mt-1.5 leading-tight">
                     {g.names.slice(0, 2).join(' · ')}
                     {g.names.length > 2 && (
                       <span className="text-toss-text-tertiary/60"> +{g.names.length - 2}</span>
@@ -273,11 +273,11 @@ export default function AllocationCard({ data, hideAssets }: Props) {
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: r.color }}
                   />
-                  <span className={`text-[10px] font-semibold ${r.text}`}>
+                  <span className={`text-xs font-semibold ${r.text}`}>
                     {RISK_DISPLAY[r.label as RiskLevel].title}
                   </span>
                 </div>
-                <p className={`text-[9px] ${r.text} opacity-70 mb-0.5 leading-tight`}>
+                <p className={`text-xs ${r.text} opacity-70 mb-0.5 leading-tight`}>
                   {RISK_DISPLAY[r.label as RiskLevel].desc}
                 </p>
                 <p className={`num text-sm font-bold ${r.text}`}>{r.pct.toFixed(1)}%</p>

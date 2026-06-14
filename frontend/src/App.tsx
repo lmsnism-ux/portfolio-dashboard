@@ -1,19 +1,17 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchPortfolio, triggerRefresh, reorderAccounts } from './api';
+import { KeyRound } from 'lucide-react';
+import { fetchPortfolio, isAuthError, triggerRefresh, reorderAccounts } from './api';
 import Header from './components/Header';
 import BottomNav, { type TabKey } from './components/BottomNav';
 import MarketIndicesCard from './components/MarketIndicesCard';
-import QuickTradeCard from './components/QuickTradeCard';
 import AutoBuyCard from './components/AutoBuyCard';
 import RealEstateCard from './components/RealEstateCard';
 import CashCard from './components/CashCard';
-import HistoryChart from './components/HistoryChart';
-import GoalCard from './components/GoalCard';
-import AllocationCard from './components/AllocationCard';
-import TaxOptimizerCard from './components/TaxOptimizerCard';
-import HoldingsBar from './components/HoldingsBar';
 import HoldingsList from './components/HoldingsList';
+import HomeOverview from './components/HomeOverview';
+import SettingsPanel from './components/SettingsPanel';
+import ApiKeyModal from './components/modals/ApiKeyModal';
 import { DashboardSkeleton } from './components/Skeletons';
 import ErrorBoundary from './components/ErrorBoundary';
 import { isLongTermAccount, fmtKRW, fmtPct, colorClass, applyDisplayToggles } from './utils';
@@ -26,6 +24,12 @@ import type { AccountData, HoldingData } from './types';
 const RebalanceCard      = lazy(() => import('./components/RebalanceCard'));
 const ProfitHeatmap      = lazy(() => import('./components/ProfitHeatmap'));
 const MarketInsightsCard = lazy(() => import('./components/MarketInsightsCard'));
+const QuickTradeCard     = lazy(() => import('./components/QuickTradeCard'));
+const HistoryChart       = lazy(() => import('./components/HistoryChart'));
+const GoalCard           = lazy(() => import('./components/GoalCard'));
+const AllocationCard     = lazy(() => import('./components/AllocationCard'));
+const TaxOptimizerCard   = lazy(() => import('./components/TaxOptimizerCard'));
+const HoldingsBar        = lazy(() => import('./components/HoldingsBar'));
 const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
 const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
 const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
@@ -38,7 +42,7 @@ export default function App() {
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem(DARK_KEY);
     if (saved !== null) return saved === '1';
-    return true; // 다크 모드 기본값
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const [hideAssets, setHideAssets] = useState(
     () => localStorage.getItem(HIDE_KEY) === '1',
@@ -48,13 +52,14 @@ export default function App() {
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData; side?: 'buy' | 'sell' } | null>(null);
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
   const [loanOn, setLoanOn] = useState(() => localStorage.getItem(LOAN_KEY) !== '0');
   const [dcOn, setDcOn] = useState(() => localStorage.getItem(DC_KEY) !== '0');
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = localStorage.getItem(TAB_KEY);
-    return (saved === 'home' || saved === 'assets' || saved === 'market' || saved === 'more')
+    return (saved === 'home' || saved === 'assets' || saved === 'analysis' || saved === 'market' || saved === 'more')
       ? saved : 'home';
   });
 
@@ -83,6 +88,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
     localStorage.setItem(DARK_KEY, dark ? '1' : '0');
   }, [dark]);
 
@@ -92,13 +98,13 @@ export default function App() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['portfolio'],
     queryFn: fetchPortfolio,
     refetchInterval: 7 * 60 * 1000,
     staleTime: 5 * 60 * 1000,
     // Render 무료 서버가 절전에서 깨어나는 데 30~60초 걸릴 수 있어 넉넉히 재시도
-    retry: 6,
+    retry: (failureCount, queryError) => !isAuthError(queryError) && failureCount < 6,
     retryDelay: (i) => Math.min(1000 * 2 ** i, 8000),
   });
 
@@ -130,22 +136,36 @@ export default function App() {
   if (isLoading) return <DashboardSkeleton />;
 
   if (isError || !data) {
+    const authRequired = isAuthError(error);
     return (
-      <div className="min-h-screen bg-toss-bg flex items-center justify-center px-6">
+      <div className="min-h-[100dvh] bg-toss-bg flex items-center justify-center px-6">
         <div className="text-center max-w-xs">
-          <p className="text-lg font-bold text-toss-text-primary mb-2">잠시만요, 서버를 깨우는 중이에요</p>
+          <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-toss-blue-soft flex items-center justify-center">
+            <KeyRound size={22} className="text-toss-blue" />
+          </div>
+          <p className="text-lg font-bold text-toss-text-primary mb-2">
+            {authRequired ? 'API 키가 필요해요' : '자산 정보를 불러오지 못했어요'}
+          </p>
           <p className="text-sm text-toss-text-secondary mb-5 leading-relaxed">
-            무료 서버는 한동안 안 쓰면 절전 모드로 들어가요.
-            처음 열 때 최대 1분 정도 걸릴 수 있어요.
-            잠시 후 아래 버튼을 눌러주세요.
+            {authRequired
+              ? '자산 데이터를 보호하기 위해 등록된 API 키를 입력해주세요.'
+              : '서버가 시작 중이거나 네트워크 연결이 불안정할 수 있어요. 잠시 후 다시 시도해주세요.'}
           </p>
           <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['portfolio'] })}
-            className="px-5 py-2.5 bg-toss-blue text-white rounded-full text-sm font-semibold hover:opacity-90 active:scale-95 transition-all"
+            onClick={() => authRequired ? setAuthModalOpen(true) : refetch()}
+            className="min-h-12 w-full px-5 bg-toss-blue text-white rounded-xl text-sm font-semibold active:scale-[0.98] transition-transform"
           >
-            다시 시도
+            {authRequired ? 'API 키 입력' : '다시 시도'}
           </button>
         </div>
+        {authModalOpen && (
+          <ApiKeyModal
+            onClose={() => {
+              setAuthModalOpen(false);
+              refetch();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -177,26 +197,19 @@ export default function App() {
       {tab === 'home' && (
         <Header
           data={data}
-          dark={dark}
           hideAssets={hideAssets}
           realEstateOn={realEstateOn}
           loanOn={loanOn}
           dcOn={dcOn}
-          onToggleDark={() => setDark((d) => !d)}
           onToggleHide={() => setHideAssets((h) => !h)}
           onRefresh={() => refreshMutation.mutate()}
-          onToggleDc={handleDcToggle}
           isRefreshing={refreshMutation.isPending}
-          onAddHolding={() => {
-            const target = data.accounts.find(a => a.holdings.some(h => !h.is_snapshot)) ?? data.accounts[0];
-            if (target) setAdding(target);
-          }}
         />
       )}
       {tab !== 'home' && (
         <div className="max-w-2xl mx-auto px-5 pt-6 pb-2">
           <h1 className="text-[22px] font-bold text-toss-text-primary">
-            {tab === 'assets' ? '내 자산' : tab === 'market' ? '시장' : '더보기'}
+            {tab === 'assets' ? '내 자산' : tab === 'analysis' ? '자산 분석' : tab === 'market' ? '시장' : '더보기'}
           </h1>
           {tab === 'assets' && (
             <div className="mt-1.5">
@@ -218,36 +231,24 @@ export default function App() {
 
       <main key={tab} className="tab-screen max-w-2xl mx-auto px-4 py-5 space-y-4 pb-24">
         {tab === 'home' && (
-          <>
-            {/* 빠른 거래 — 상단 가로 스크롤 종목 카드 */}
-            <QuickTradeCard
-              data={data}
-              onTrade={(acc, h, side) => setTrading({ account: acc, holding: h, side })}
-              onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
-            />
-
-            {/* 투자 수익 + 기간별 수익분석 + 자산 추이 */}
-            <HistoryChart
-              data={data}
-              hideAssets={hideAssets}
-              dcOn={dcOn}
-              realEstateOn={realEstateOn}
-              loanOn={loanOn}
-            />
-
-            {/* 자산 배분 도넛 */}
-            <AllocationCard data={data} hideAssets={hideAssets} />
-
-            {/* 절세 최적화 */}
-            <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
-
-            {/* 목표 */}
-            {goalCard}
-          </>
+          <HomeOverview
+            data={data}
+            hideAssets={hideAssets}
+            onOpenAssets={() => handleTabChange('assets')}
+            onOpenAnalysis={() => handleTabChange('analysis')}
+          />
         )}
 
         {tab === 'assets' && (
           <>
+            <Suspense fallback={null}>
+              <QuickTradeCard
+                data={data}
+                onTrade={(acc, h, side) => setTrading({ account: acc, holding: h, side })}
+                onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
+              />
+            </Suspense>
+
             {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
             <HoldingsList
               data={data}
@@ -261,7 +262,9 @@ export default function App() {
 
             {/* 종목별 비중 바 차트 */}
             {data.top_holdings?.length > 0 && (
-              <HoldingsBar data={data} hideAssets={hideAssets} />
+              <Suspense fallback={null}>
+                <HoldingsBar data={data} hideAssets={hideAssets} />
+              </Suspense>
             )}
 
             {/* 부동산 · 대출 */}
@@ -287,6 +290,22 @@ export default function App() {
           </>
         )}
 
+        {tab === 'analysis' && (
+          <Suspense fallback={<div className="skeleton h-72 rounded-[var(--radius-toss-lg)]" />}>
+            <HistoryChart
+              data={data}
+              hideAssets={hideAssets}
+              dcOn={dcOn}
+              realEstateOn={realEstateOn}
+              loanOn={loanOn}
+            />
+            <AllocationCard data={data} hideAssets={hideAssets} />
+            <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
+            {goalCard}
+            <RebalanceCard data={data} hideAssets={hideAssets} />
+          </Suspense>
+        )}
+
         {tab === 'market' && (
           <>
             <MarketIndicesCard />
@@ -299,10 +318,19 @@ export default function App() {
 
         {tab === 'more' && (
           <>
+            <SettingsPanel
+              dark={dark}
+              hideAssets={hideAssets}
+              dcOn={dcOn}
+              realEstateOn={realEstateOn}
+              loanOn={loanOn}
+              onToggleDark={() => setDark((d) => !d)}
+              onToggleHide={() => setHideAssets((h) => !h)}
+              onToggleDc={handleDcToggle}
+              onToggleRealEstate={() => handleRealEstateToggle(!realEstateOn)}
+              onToggleLoan={() => handleLoanToggle(!loanOn)}
+            />
             <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
-            <Suspense fallback={null}>
-              <RebalanceCard data={data} hideAssets={hideAssets} />
-            </Suspense>
           </>
         )}
 

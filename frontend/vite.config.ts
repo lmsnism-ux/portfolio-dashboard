@@ -37,19 +37,15 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,        // 새 배포 즉시 활성화
         clientsClaim: true,       // 즉시 모든 탭 제어
-        // API는 항상 네트워크 우선 (오프라인일 때만 캐시), 정적 자원은 캐시 우선
+        // 분석 탭을 열 때만 필요한 대형 차트 번들은 설치 시 미리 받지 않는다.
+        globIgnores: [
+          '**/CategoricalChart-*.js',
+          '**/CartesianChart-*.js',
+          '**/tooltipContext-*.js',
+        ],
+        // 금융 API 응답은 서비스 워커에 저장하지 않는다.
         navigateFallback: `${base}index.html`,
         runtimeCaching: [
-          {
-            urlPattern: /^https?.*\/api\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
           {
             urlPattern: /\.(?:js|css|woff2?|svg|png|webp)$/,
             handler: 'StaleWhileRevalidate',
@@ -81,7 +77,6 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           if (!id.includes('node_modules')) return;
-          if (id.includes('recharts') || id.includes('d3-')) return 'chart-vendor';
           if (id.includes('lucide-react')) return 'icons-vendor';
           if (id.includes('@tanstack/react-query')) return 'query-vendor';
           if (id.includes('/react-dom/') || id.includes('/react/')) return 'react-vendor';

@@ -8,6 +8,20 @@ const BASE = `${_RAW_BASE}/api`;
 
 // 운영 환경에서 쓰기 작업 시 X-API-Key 헤더 전송. localStorage에 저장.
 const API_KEY_STORE = 'pd_api_key';
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export function isAuthError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export function getApiKey(): string {
   return localStorage.getItem(API_KEY_STORE) ?? '';
 }
@@ -23,9 +37,9 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 
 async function writeFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = authHeaders((init.headers as Record<string, string>) ?? {});
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (res.status === 401) {
-    throw new Error('인증이 필요해요. 우상단 ⓘ에서 API 키를 설정해주세요.');
+    throw new ApiError(401, 'API 키를 확인해주세요.');
   }
   return res;
 }
@@ -37,9 +51,9 @@ async function writeFetch(url: string, init: RequestInit = {}): Promise<Response
  */
 async function readFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = authHeaders((init.headers as Record<string, string>) ?? {});
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (res.status === 401) {
-    throw new Error('인증이 필요해요. 우상단 ⓘ에서 API 키를 설정해주세요.');
+    throw new ApiError(401, 'API 키를 확인해주세요.');
   }
   return res;
 }
@@ -313,7 +327,7 @@ export async function reorderAccounts(names: string[]): Promise<void> {
 export async function downloadCsv(): Promise<void> {
   const key = getApiKey();
   const headers: Record<string, string> = key ? { 'X-API-Key': key } : {};
-  const res = await fetch(`${BASE}/export/csv`, { headers });
+  const res = await fetch(`${BASE}/export/csv`, { headers, cache: 'no-store' });
   if (!res.ok) throw new Error(`CSV 다운로드 실패 (${res.status})`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

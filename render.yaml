@@ -17,3 +17,7 @@ services:
         sync: false      # 대시보드에서 직접 https://<프론트도메인> 입력
       - key: PORTFOLIO_JSON_B64
         sync: false      # 첫 부팅 시 시드용 portfolio.json (base64). 이후 PATCH로 수정 가능
+      - key: PORTFOLIO_API_KEY
+        sync: false      # 읽기/쓰기 보호용 API 키
+      - key: READ_REQUIRE_AUTH
+        value: "1"

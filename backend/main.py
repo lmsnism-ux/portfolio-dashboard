@@ -101,7 +101,10 @@ _extra_origins = list({_GITHUB_PAGES_ORIGIN} | {
 #   읽기 엔드포인트에도 X-API-Key 요구 (외부 도메인 호스팅 시 권장)
 _API_KEY = os.environ.get("PORTFOLIO_API_KEY", "").strip()
 _LAN_AUTH_REQUIRED = os.environ.get("LAN_REQUIRE_AUTH", "0") == "1"
-_READ_REQUIRE_AUTH = os.environ.get("READ_REQUIRE_AUTH", "0") == "1"
+_READ_REQUIRE_AUTH = os.environ.get(
+    "READ_REQUIRE_AUTH",
+    "1" if _API_KEY else "0",
+) == "1"
 
 
 def _check_api_key(
@@ -162,6 +165,25 @@ app.add_middleware(
     allow_headers=["*", "X-API-Key"],
 )
 
+_SENSITIVE_API_PREFIXES = (
+    "/api/portfolio",
+    "/api/history",
+    "/api/trades",
+    "/api/prices",
+    "/api/export",
+    "/api/market/insights",
+)
+
+
+@app.middleware("http")
+async def prevent_sensitive_response_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith(_SENSITIVE_API_PREFIXES):
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def _cache_stale_hours(updated_at: str | None) -> float | None:
     if not updated_at:
         return None
@@ -189,7 +211,7 @@ async def health_check():
     }
 
 
-@app.get("/api/export/csv")
+@app.get("/api/export/csv", dependencies=[Depends(require_read_auth)])
 async def export_csv():
     """보유 종목 + 거래내역 CSV 다운로드."""
     portfolio = load_portfolio()
@@ -551,9 +573,9 @@ async def reorder_accounts(body: AccountOrder):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/portfolio/import")
+@app.post("/api/portfolio/import", dependencies=[Depends(require_api_key)])
 async def import_portfolio(request: Request):
-    """포트폴리오 전체 교체 (마이그레이션 1회용 — 인증 없음)."""
+    """포트폴리오 전체 교체 (마이그레이션 1회용)."""
     data = await request.json()
     save_portfolio(data)
     return {"status": "ok", "accounts": len(data.get("accounts", []))}
@@ -950,4 +972,3 @@ async def remove_trade(trade_id: int, apply_to_holding: bool = True):
     except Exception as e:
         logger.error(f"trade 삭제 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-

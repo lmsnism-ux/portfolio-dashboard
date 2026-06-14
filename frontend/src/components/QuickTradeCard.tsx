@@ -65,7 +65,7 @@ export default function QuickTradeCard({ data, onTrade, onEdit }: Props) {
                 return (
                   <div
                     key={holding.name}
-                    className="flex-shrink-0 w-[116px] bg-toss-bg rounded-2xl p-3 flex flex-col gap-2"
+                    className="flex-shrink-0 w-[132px] bg-toss-bg rounded-2xl p-3 flex flex-col gap-2"
                     style={{ scrollSnapAlign: 'start' }}
                   >
                     {/* 아바타 + 편집 */}
@@ -78,7 +78,7 @@ export default function QuickTradeCard({ data, onTrade, onEdit }: Props) {
                       </div>
                       <button
                         onClick={() => onEdit(account, holding)}
-                        className="p-1 -mt-0.5 -mr-0.5 text-toss-text-tertiary hover:text-toss-text-secondary active:scale-90 transition-all"
+                        className="min-w-11 min-h-11 -mt-1.5 -mr-1.5 flex items-center justify-center text-toss-text-tertiary hover:text-toss-text-secondary active:scale-90 transition-all"
                         aria-label={`${holding.name} 편집`}
                       >
                         <Pencil size={13} />
@@ -86,12 +86,12 @@ export default function QuickTradeCard({ data, onTrade, onEdit }: Props) {
                     </div>
 
                     {/* 종목명 */}
-                    <p className="text-[12px] font-semibold text-toss-text-primary leading-tight line-clamp-2">
+                    <p className="text-[13px] font-semibold text-toss-text-primary leading-tight line-clamp-2">
                       {holding.name}
                     </p>
 
                     {/* 당일 등락률 */}
-                    <p className={`num text-[11px] font-medium ${chgCls}`}>
+                    <p className={`num text-xs font-medium ${chgCls}`}>
                       {chg != null ? fmtPct(chg) : '—'}
                     </p>
 
@@ -99,13 +99,13 @@ export default function QuickTradeCard({ data, onTrade, onEdit }: Props) {
                     <div className="flex gap-1 mt-auto">
                       <button
                         onClick={() => onTrade(account, holding, 'buy')}
-                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-toss-blue text-white active:scale-95 transition-transform"
+                        className="flex-1 min-h-11 rounded-xl text-xs font-bold bg-toss-blue text-white active:scale-95 transition-transform"
                       >
                         매수
                       </button>
                       <button
                         onClick={() => onTrade(account, holding, 'sell')}
-                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-toss-bg border border-toss-border text-toss-text-secondary active:scale-95 transition-transform"
+                        className="flex-1 min-h-11 rounded-xl text-xs font-bold bg-toss-bg border border-toss-border text-toss-text-secondary active:scale-95 transition-transform"
                       >
                         매도
                       </button>
