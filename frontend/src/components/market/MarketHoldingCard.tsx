@@ -114,20 +114,12 @@ export default function MarketHoldingCard({
       } ${isPos ? 'bg-toss-up-soft border-toss-up/20' : 'bg-toss-down-soft border-toss-down/20'}`}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-semibold text-toss-text-primary leading-snug truncate">
+        <p className="text-[13px] font-semibold text-toss-text-primary leading-snug truncate">
           {etfDisplayName(item.name)}
         </p>
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-          <span
-            className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap"
-            style={{ background: item.accentColor }}
-          >
-            {item.shortLabel}
-          </span>
-          {item.price && (
-            <span className="text-[10px] text-toss-text-tertiary truncate">{item.price}</span>
-          )}
-        </div>
+        {item.price && (
+          <p className="num text-[11px] text-toss-text-secondary mt-1 truncate">{item.price}</p>
+        )}
       </div>
       <div className="text-right shrink-0">
         <p className={`num text-[14px] font-extrabold leading-tight ${colorClass(item.pct)}`}>
