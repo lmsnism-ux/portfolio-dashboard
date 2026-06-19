@@ -1,10 +1,4 @@
-"""읽기 엔드포인트 인증 옵션 (READ_REQUIRE_AUTH) 동작 검증.
-
-- API 키 미설정 기본값: 인증 없이 통과
-- API 키 설정 기본값: 읽기 인증 활성화
-- READ_REQUIRE_AUTH=1: PORTFOLIO_API_KEY 미설정 + 비-LAN 요청은 401
-- READ_REQUIRE_AUTH=1 + PORTFOLIO_API_KEY: 헤더 일치하면 통과, 불일치/누락은 401
-"""
+"""자산 조회는 공개하고 변경 작업만 인증하는 정책을 검증한다."""
 from __future__ import annotations
 
 import importlib
@@ -39,43 +33,20 @@ class ReadAuthTest(unittest.TestCase):
         res = client.get("/api/health")
         self.assertEqual(res.status_code, 200)
 
-    def test_api_key_enables_read_auth_by_default(self) -> None:
-        """운영 API 키가 설정되면 별도 옵션 없이 자산 읽기도 보호한다."""
+    def test_api_key_does_not_block_portfolio_read(self) -> None:
+        """운영 API 키가 있어도 자산 조회는 로그인 없이 허용한다."""
         os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
-        client = self._reload_app()
-        res = client.get("/api/portfolio")
-        self.assertEqual(res.status_code, 401)
-
-    def test_read_auth_can_be_explicitly_disabled(self) -> None:
-        """로컬 호환이 필요하면 READ_REQUIRE_AUTH=0으로 명시적으로 끌 수 있다."""
-        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
-        os.environ["READ_REQUIRE_AUTH"] = "0"
         client = self._reload_app()
         res = client.get("/api/portfolio")
         self.assertNotEqual(res.status_code, 401)
 
-    def test_on_blocks_without_key(self) -> None:
-        """READ_REQUIRE_AUTH=1 + PORTFOLIO_API_KEY 설정 → 키 없는 GET은 401."""
-        os.environ["READ_REQUIRE_AUTH"] = "1"
+    def test_legacy_read_auth_flag_is_ignored(self) -> None:
+        """기존 Render 환경변수가 남아 있어도 조회를 다시 잠그지 않는다."""
         os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
+        os.environ["READ_REQUIRE_AUTH"] = "1"
         client = self._reload_app()
         res = client.get("/api/portfolio")
-        self.assertEqual(res.status_code, 401)
-
-    def test_on_allows_with_matching_key(self) -> None:
-        """올바른 헤더면 통과 (200 또는 500은 데이터/네트워크 문제일 뿐 인증은 통과)."""
-        os.environ["READ_REQUIRE_AUTH"] = "1"
-        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
-        client = self._reload_app()
-        res = client.get("/api/portfolio", headers={"X-API-Key": "secret-xyz"})
         self.assertNotEqual(res.status_code, 401)
-
-    def test_on_rejects_wrong_key(self) -> None:
-        os.environ["READ_REQUIRE_AUTH"] = "1"
-        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
-        client = self._reload_app()
-        res = client.get("/api/portfolio", headers={"X-API-Key": "wrong"})
-        self.assertEqual(res.status_code, 401)
 
     def test_session_replaces_stored_master_key(self) -> None:
         """마스터 키로 만료 세션을 발급받고 Bearer 인증을 사용할 수 있다."""
@@ -85,7 +56,7 @@ class ReadAuthTest(unittest.TestCase):
         login = client.post("/api/auth/session", json={"api_key": "secret-xyz"})
         self.assertEqual(login.status_code, 200)
         token = login.json()["token"]
-        res = client.get("/api/portfolio", headers={"Authorization": f"Bearer {token}"})
+        res = client.delete("/api/trades/999999", headers={"Authorization": f"Bearer {token}"})
         self.assertNotEqual(res.status_code, 401)
 
     def test_session_rejects_wrong_master_key(self) -> None:
@@ -94,13 +65,13 @@ class ReadAuthTest(unittest.TestCase):
         res = client.post("/api/auth/session", json={"api_key": "wrong"})
         self.assertEqual(res.status_code, 401)
 
-    def test_deleted_session_cannot_read(self) -> None:
+    def test_deleted_session_cannot_write(self) -> None:
         os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
         client = self._reload_app()
         token = client.post("/api/auth/session", json={"api_key": "secret-xyz"}).json()["token"]
         headers = {"Authorization": f"Bearer {token}"}
         self.assertEqual(client.delete("/api/auth/session", headers=headers).status_code, 200)
-        self.assertEqual(client.get("/api/portfolio", headers=headers).status_code, 401)
+        self.assertEqual(client.delete("/api/trades/999999", headers=headers).status_code, 401)
 
     def test_market_endpoints_remain_public(self) -> None:
         """공개 시장 데이터(/api/market/*)는 READ_REQUIRE_AUTH 영향 없음."""
@@ -111,7 +82,7 @@ class ReadAuthTest(unittest.TestCase):
         res = client.get("/api/health")
         self.assertEqual(res.status_code, 200)
 
-    def test_export_requires_read_auth(self) -> None:
+    def test_export_requires_write_auth(self) -> None:
         os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
         client = self._reload_app()
         res = client.get("/api/export/csv")

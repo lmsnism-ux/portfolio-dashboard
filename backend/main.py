@@ -105,14 +105,9 @@ _extra_origins = list({_GITHUB_PAGES_ORIGIN} | {
 # API 인증
 # - PORTFOLIO_API_KEY: 설정되면 쓰기 엔드포인트에 X-API-Key 헤더 필수
 # - LAN_REQUIRE_AUTH=1: PORTFOLIO_API_KEY 미설정 시에도 사설망 자동 통과를 차단
-# - READ_REQUIRE_AUTH=1: /api/portfolio, /api/history 등 자산 정보를 노출하는
-#   읽기 엔드포인트에도 X-API-Key 요구 (외부 도메인 호스팅 시 권장)
+# - 읽기 엔드포인트는 개인용 공개 대시보드 요구에 따라 인증 없이 허용
 _API_KEY = os.environ.get("PORTFOLIO_API_KEY", "").strip()
 _LAN_AUTH_REQUIRED = os.environ.get("LAN_REQUIRE_AUTH", "0") == "1"
-_READ_REQUIRE_AUTH = os.environ.get(
-    "READ_REQUIRE_AUTH",
-    "1" if _API_KEY else "0",
-) == "1"
 _SESSION_TTL_SECONDS = 12 * 60 * 60
 _SESSIONS: dict[str, float] = {}
 
@@ -175,14 +170,8 @@ def require_read_auth(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> None:
-    """자산 정보 노출 읽기 엔드포인트 보호.
-
-    READ_REQUIRE_AUTH=1 일 때만 인증을 강제한다. 미설정이면 pass-through.
-    외부 도메인에 호스팅하는 경우 켜는 것을 권장.
-    """
-    if not _READ_REQUIRE_AUTH:
-        return
-    _check_api_key(request, x_api_key, authorization)
+    """개인용 공개 대시보드의 읽기 요청은 인증 없이 허용한다."""
+    return
 
 
 app.add_middleware(
@@ -274,7 +263,7 @@ async def health_check():
     }
 
 
-@app.get("/api/export/csv", dependencies=[Depends(require_read_auth)])
+@app.get("/api/export/csv", dependencies=[Depends(require_api_key)])
 async def export_csv():
     """보유 종목 + 거래내역 CSV 다운로드."""
     portfolio = load_portfolio()

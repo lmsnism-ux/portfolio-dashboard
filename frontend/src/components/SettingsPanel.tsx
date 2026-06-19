@@ -142,8 +142,8 @@ export default function SettingsPanel({
           >
             <KeyRound size={19} />
             <span>
-              <strong>세션 다시 연결</strong>
-              <small>마스터 키를 저장하지 않고 새 세션을 발급해요.</small>
+              <strong>편집 권한 연결</strong>
+              <small>추가·수정·삭제가 필요할 때만 연결해요.</small>
             </span>
           </button>
           <button

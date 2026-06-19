@@ -18,6 +18,6 @@ services:
       - key: PORTFOLIO_JSON_B64
         sync: false      # 첫 부팅 시 시드용 portfolio.json (base64). 이후 PATCH로 수정 가능
       - key: PORTFOLIO_API_KEY
-        sync: false      # 읽기/쓰기 보호용 API 키
+        sync: false      # 추가·수정·삭제 보호용 API 키
       - key: READ_REQUIRE_AUTH
-        value: "1"
+        value: "0"

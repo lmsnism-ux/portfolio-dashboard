@@ -56,7 +56,7 @@ export default function ApiKeyModal({ onClose }: { onClose: () => void }) {
         className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="apikey-modal-title" className="text-lg font-bold text-toss-text-primary mb-1">API 키 설정</h2>
+        <h2 id="apikey-modal-title" className="text-lg font-bold text-toss-text-primary mb-1">편집 권한 연결</h2>
         <p id="apikey-modal-description" className="text-[12px] text-toss-text-secondary mb-4">
           키는 저장하지 않고, 이 탭에서만 유효한 12시간 세션으로 교환합니다.
         </p>
