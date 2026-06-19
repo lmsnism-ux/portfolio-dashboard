@@ -129,6 +129,42 @@ export interface HistoryPoint {
   usd_krw: number | null;
 }
 
+export interface CashFlowRecord {
+  id: number;
+  flow_type: 'deposit' | 'withdrawal';
+  amount_krw: number;
+  occurred_on: string;
+  account_name: string | null;
+  note: string | null;
+  recorded_at: string;
+}
+
+export interface PerformanceSummary {
+  available: boolean;
+  from_date?: string;
+  to_date?: string;
+  start_value_krw?: number;
+  end_value_krw?: number;
+  net_external_flow_krw?: number;
+  investment_result_krw?: number;
+  twr_pct?: number;
+  mwr_annual_pct?: number | null;
+  max_drawdown_pct?: number;
+  annualized_volatility_pct?: number;
+  snapshot_count?: number;
+}
+
+export interface InvestmentDecision {
+  id: number;
+  title: string;
+  thesis: string;
+  status: 'planned' | 'done' | 'dismissed';
+  review_on: string | null;
+  outcome_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ClassWeight {
   name: string;
   value_krw: number;

@@ -19,6 +19,8 @@ import { STORAGE_KEYS } from './constants';
 import HealthBanner from './components/HealthBanner';
 import { useAlertTriggers } from './hooks/useAlertTriggers';
 import type { AccountData, HoldingData } from './types';
+import PublicPortfolio from './components/PublicPortfolio';
+import DecisionCenter from './components/DecisionCenter';
 
 // 부가 컴포넌트: 첫 화면에 즉시 필요 없음 → lazy load
 const RebalanceCard      = lazy(() => import('./components/RebalanceCard'));
@@ -34,11 +36,15 @@ const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
 const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
 const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
 const TradeModal        = lazy(() => import('./components/TradeModal'));
+const PortfolioRiskCard = lazy(() => import('./components/PortfolioRiskCard'));
+const ValueReportCard   = lazy(() => import('./components/ValueReportCard'));
+const CashFlowCard      = lazy(() => import('./components/CashFlowCard'));
+const DecisionJournal   = lazy(() => import('./components/DecisionJournal'));
 
 const { DARK_MODE: DARK_KEY, HIDE_ASSETS: HIDE_KEY, REAL_ESTATE_SHOW: RE_KEY, DC_SHOW: DC_KEY, LOAN_ON: LOAN_KEY } = STORAGE_KEYS;
 const TAB_KEY = 'pd_tab';
 
-export default function App() {
+function PrivateDashboard({ onExit }: { onExit: () => void }) {
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem(DARK_KEY);
     if (saved !== null) return saved === '1';
@@ -157,6 +163,9 @@ export default function App() {
           >
             {authRequired ? 'API 키 입력' : '다시 시도'}
           </button>
+          <button onClick={onExit} className="mt-3 min-h-11 w-full text-sm font-semibold text-toss-text-secondary">
+            공개 포트폴리오로 돌아가기
+          </button>
         </div>
         {authModalOpen && (
           <ApiKeyModal
@@ -231,12 +240,15 @@ export default function App() {
 
       <main key={tab} className="tab-screen max-w-2xl mx-auto px-4 py-5 space-y-4 pb-24">
         {tab === 'home' && (
-          <HomeOverview
-            data={data}
-            hideAssets={hideAssets}
-            onOpenAssets={() => handleTabChange('assets')}
-            onOpenAnalysis={() => handleTabChange('analysis')}
-          />
+          <>
+            <DecisionCenter data={data} hideAssets={hideAssets} onOpenAnalysis={() => handleTabChange('analysis')} />
+            <HomeOverview
+              data={data}
+              hideAssets={hideAssets}
+              onOpenAssets={() => handleTabChange('assets')}
+              onOpenAnalysis={() => handleTabChange('analysis')}
+            />
+          </>
         )}
 
         {tab === 'assets' && (
@@ -299,6 +311,8 @@ export default function App() {
               realEstateOn={realEstateOn}
               loanOn={loanOn}
             />
+            <PortfolioRiskCard data={data} />
+            <ValueReportCard data={data} hideAssets={hideAssets} />
             <AllocationCard data={data} hideAssets={hideAssets} />
             <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
             {goalCard}
@@ -329,8 +343,11 @@ export default function App() {
               onToggleDc={handleDcToggle}
               onToggleRealEstate={() => handleRealEstateToggle(!realEstateOn)}
               onToggleLoan={() => handleLoanToggle(!loanOn)}
+              onLogout={onExit}
             />
             <AutoBuyCard items={data.auto_buy_items ?? []} accounts={data.accounts} />
+            <Suspense fallback={null}><CashFlowCard /></Suspense>
+            <Suspense fallback={null}><DecisionJournal /></Suspense>
           </>
         )}
 
@@ -362,4 +379,20 @@ export default function App() {
       </ErrorBoundary>
     </div>
   );
+}
+
+export default function App() {
+  const [route, setRoute] = useState(() => window.location.hash === '#/app' ? 'app' : 'public');
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(window.location.hash === '#/app' ? 'app' : 'public');
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  if (route !== 'app') {
+    return <PublicPortfolio onOpenPrivate={() => { window.location.hash = '/app'; }} />;
+  }
+
+  return <PrivateDashboard onExit={() => { window.location.hash = '/'; }} />;
 }

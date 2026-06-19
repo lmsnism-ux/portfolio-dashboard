@@ -10,10 +10,11 @@ import {
   Landmark,
   Moon,
   ShieldCheck,
+  LogOut,
   Sun,
   WalletCards,
 } from 'lucide-react';
-import { downloadCsv } from '../api';
+import { deleteSession, downloadCsv } from '../api';
 import ApiKeyModal from './modals/ApiKeyModal';
 import NotifModal from './modals/NotifModal';
 
@@ -28,6 +29,7 @@ interface Props {
   onToggleDc: () => void;
   onToggleRealEstate: () => void;
   onToggleLoan: () => void;
+  onLogout: () => void;
 }
 
 function ToggleRow({
@@ -72,6 +74,7 @@ export default function SettingsPanel({
   onToggleDc,
   onToggleRealEstate,
   onToggleLoan,
+  onLogout,
 }: Props) {
   const queryClient = useQueryClient();
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
@@ -139,8 +142,8 @@ export default function SettingsPanel({
           >
             <KeyRound size={19} />
             <span>
-              <strong>API 키 설정</strong>
-              <small>자산 조회와 편집에 사용하는 키를 관리해요.</small>
+              <strong>세션 다시 연결</strong>
+              <small>마스터 키를 저장하지 않고 새 세션을 발급해요.</small>
             </span>
           </button>
           <button
@@ -151,6 +154,16 @@ export default function SettingsPanel({
             <span>
               <strong>알림 설정</strong>
               <small>자동매수 일정과 가격 변동 알림을 관리해요.</small>
+            </span>
+          </button>
+          <button
+            onClick={() => { void deleteSession().finally(onLogout); }}
+            className="settings-action"
+          >
+            <LogOut size={19} />
+            <span>
+              <strong>로그아웃</strong>
+              <small>현재 탭의 개인 자산 세션을 종료해요.</small>
             </span>
           </button>
           <button
@@ -177,7 +190,7 @@ export default function SettingsPanel({
         <div>
           <h2 className="text-sm font-bold text-toss-text-primary">개인 자산 데이터 보호</h2>
           <p className="text-xs text-toss-text-secondary leading-relaxed mt-1">
-            자산 API 응답은 오프라인 캐시에 저장하지 않습니다. 공용 기기에서는 사용 후 API 키를 제거하세요.
+            마스터 키는 저장하지 않습니다. 자산 API 응답도 오프라인 캐시에 남기지 않으며, 세션은 12시간 후 만료됩니다.
           </p>
         </div>
       </section>

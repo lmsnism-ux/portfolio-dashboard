@@ -1,4 +1,4 @@
-import type { HistoryPoint, MarketInsights, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
+import type { CashFlowRecord, HistoryPoint, InvestmentDecision, MarketInsights, PerformanceSummary, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
 
 // dev에서는 vite proxy가 /api를 백엔드로 forward.
 // 배포 시 VITE_API_BASE=https://your-api.onrender.com 같이 지정.
@@ -6,8 +6,8 @@ import type { HistoryPoint, MarketInsights, PortfolioSummary, TradeAggregate, Tr
 const _RAW_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '');
 const BASE = `${_RAW_BASE}/api`;
 
-// 운영 환경에서 쓰기 작업 시 X-API-Key 헤더 전송. localStorage에 저장.
-const API_KEY_STORE = 'pd_api_key';
+// 마스터 키는 저장하지 않는다. 로그인으로 발급받은 12시간 세션만 현재 탭에 보관한다.
+const SESSION_STORE = 'pd_session';
 export class ApiError extends Error {
   status: number;
 
@@ -22,23 +22,46 @@ export function isAuthError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
 }
 
-export function getApiKey(): string {
-  return localStorage.getItem(API_KEY_STORE) ?? '';
+export function getSessionToken(): string {
+  return sessionStorage.getItem(SESSION_STORE) ?? '';
 }
-export function setApiKey(key: string): void {
-  if (key) localStorage.setItem(API_KEY_STORE, key);
-  else localStorage.removeItem(API_KEY_STORE);
+export function clearSession(): void {
+  sessionStorage.removeItem(SESSION_STORE);
+  localStorage.removeItem('pd_api_key');
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const key = getApiKey();
-  return key ? { ...extra, 'X-API-Key': key } : extra;
+  const token = getSessionToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
+export async function createSession(apiKey: string): Promise<void> {
+  const res = await fetch(`${BASE}/auth/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!res.ok) throw new ApiError(res.status, '로그인 키를 확인해주세요.');
+  const data = await res.json() as { token: string };
+  sessionStorage.setItem(SESSION_STORE, data.token);
+  localStorage.removeItem('pd_api_key');
+}
+
+export async function deleteSession(): Promise<void> {
+  const headers = authHeaders();
+  try {
+    await fetch(`${BASE}/auth/session`, { method: 'DELETE', headers, cache: 'no-store' });
+  } finally {
+    clearSession();
+  }
 }
 
 async function writeFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = authHeaders((init.headers as Record<string, string>) ?? {});
   const res = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (res.status === 401) {
+    clearSession();
     throw new ApiError(401, 'API 키를 확인해주세요.');
   }
   return res;
@@ -53,6 +76,7 @@ async function readFetch(url: string, init: RequestInit = {}): Promise<Response>
   const headers = authHeaders((init.headers as Record<string, string>) ?? {});
   const res = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (res.status === 401) {
+    clearSession();
     throw new ApiError(401, 'API 키를 확인해주세요.');
   }
   return res;
@@ -69,6 +93,59 @@ export async function fetchHistory(days = 365): Promise<HistoryPoint[]> {
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const json = await res.json();
   return json.items as HistoryPoint[];
+}
+
+export async function fetchPerformance(days = 730): Promise<PerformanceSummary> {
+  const res = await readFetch(`${BASE}/performance?days=${days}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCashFlows(days = 730): Promise<CashFlowRecord[]> {
+  const res = await readFetch(`${BASE}/cash-flows?days=${days}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const json = await res.json();
+  return json.items as CashFlowRecord[];
+}
+
+export async function createCashFlow(body: {
+  flow_type: 'deposit' | 'withdrawal';
+  amount_krw: number;
+  occurred_on: string;
+  account_name?: string | null;
+  note?: string | null;
+}): Promise<void> {
+  const res = await writeFetch(`${BASE}/cash-flows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+}
+
+export async function deleteCashFlow(id: number): Promise<void> {
+  const res = await writeFetch(`${BASE}/cash-flows/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+}
+
+export async function fetchDecisions(): Promise<InvestmentDecision[]> {
+  const res = await readFetch(`${BASE}/decisions`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return (await res.json()).items as InvestmentDecision[];
+}
+
+export async function createDecision(body: { title: string; thesis: string; review_on?: string | null }): Promise<void> {
+  const res = await writeFetch(`${BASE}/decisions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+}
+
+export async function updateDecision(id: number, body: { status: 'planned' | 'done' | 'dismissed'; outcome_note?: string | null }): Promise<void> {
+  const res = await writeFetch(`${BASE}/decisions/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
 }
 
 export async function triggerRefresh(): Promise<void> {
@@ -325,8 +402,7 @@ export async function reorderAccounts(names: string[]): Promise<void> {
 }
 
 export async function downloadCsv(): Promise<void> {
-  const key = getApiKey();
-  const headers: Record<string, string> = key ? { 'X-API-Key': key } : {};
+  const headers = authHeaders();
   const res = await fetch(`${BASE}/export/csv`, { headers, cache: 'no-store' });
   if (!res.ok) throw new Error(`CSV 다운로드 실패 (${res.status})`);
   const blob = await res.blob();

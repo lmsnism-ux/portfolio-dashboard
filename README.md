@@ -2,6 +2,8 @@
 
 개인 전 계좌 자산을 한 화면에서 보는 포트폴리오 대시보드입니다. FastAPI 백엔드가 가격/환율/히스토리를 계산하고, React 프론트엔드가 총자산, 수익률, 계좌별 보유 종목, 자동매수, 리밸런싱, IRP 한도, 부동산/현금 자산을 보여줍니다.
 
+공개 URL은 샘플 데이터만 사용하는 제품 포트폴리오이며, 실제 자산 화면은 `#/app`에서 만료 세션으로 분리됩니다.
+
 ## 주요 기능
 
 - 총자산, 당일 등락, 누적 수익, USD/KRW 환율 요약
@@ -13,6 +15,10 @@
 - 매수/매도 체결 기록과 평단 재계산
 - IRP ETF 한도 모니터링
 - PWA 설치와 모바일 홈 화면 실행
+- 입출금 보정 TWR/MWR, 최대낙폭, 변동성, S&P 500 비교
+- 집중도·세금·현금·목표를 이용한 오늘의 확인 항목
+- 입출금 장부와 투자 판단 기록
+- 공개 데모와 개인 자산 앱 분리
 
 ## 구조
 
@@ -28,7 +34,7 @@ frontend/
   vite.config.ts           GitHub Pages/PWA 빌드 설정
 .github/workflows/
   deploy.yml               GitHub Pages 프론트 배포
-  deploy-backend.yml       Railway 백엔드 배포
+  deploy-backend.yml       Render 백엔드 배포
   quality.yml              lint/build/unit test
 ```
 
@@ -79,7 +85,7 @@ python -m unittest discover -s backend/tests
 현재 저장소 기준 배포 흐름은 다음과 같습니다.
 
 - 프론트엔드: GitHub Pages (`.github/workflows/deploy.yml`)
-- 백엔드: Railway (`.github/workflows/deploy-backend.yml`)
+- 백엔드: Render (`.github/workflows/deploy-backend.yml`)
 - 품질 체크: GitHub Actions (`.github/workflows/quality.yml`)
 
 자세한 설정은 [DEPLOY.md](DEPLOY.md)를 확인하세요.
@@ -89,7 +95,14 @@ python -m unittest discover -s backend/tests
 기본 저장소는 파일 기반입니다.
 
 - `portfolio.json`: 계좌/보유 종목/목표/부동산/현금 설정
-- `history.db`: 자산 스냅샷과 체결 기록
+- `history.db`: 스냅샷, 거래, 입출금과 투자 판단 기록
 - `price_cache.json`: 가격/환율 캐시
 
-장기 운영에서는 `PORTFOLIO_DATA_DIR`를 Railway Volume 같은 영구 디스크로 지정하는 구성이 가장 단순합니다.
+## 인증 구조
+
+- 공개 첫 화면은 실제 API를 호출하지 않습니다.
+- 개인 앱에서 입력한 마스터 키는 저장하지 않습니다.
+- 키가 맞으면 백엔드가 12시간 세션을 발급하고, 프론트는 해당 탭의 `sessionStorage`에 세션만 보관합니다.
+- 로그아웃 또는 401 응답 시 세션이 제거됩니다.
+
+장기 운영에서는 `PORTFOLIO_DATA_DIR`를 Render Disk 같은 영구 디스크로 지정하는 구성이 가장 단순합니다.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
@@ -27,6 +28,13 @@ from trade_store import (
     delete_trade,
     aggregate_for_holding,
 )
+from cashflow_store import (
+    calculate_performance,
+    delete_cash_flow,
+    insert_cash_flow,
+    list_cash_flows,
+)
+from decision_store import create_decision, list_decisions, update_decision
 
 STALE_THRESHOLD_HOURS = 12
 
@@ -105,15 +113,36 @@ _READ_REQUIRE_AUTH = os.environ.get(
     "READ_REQUIRE_AUTH",
     "1" if _API_KEY else "0",
 ) == "1"
+_SESSION_TTL_SECONDS = 12 * 60 * 60
+_SESSIONS: dict[str, float] = {}
+
+
+def _session_token(authorization: Optional[str]) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        return ""
+    return authorization.removeprefix("Bearer ").strip()
+
+
+def _has_valid_session(authorization: Optional[str]) -> bool:
+    token = _session_token(authorization)
+    expires_at = _SESSIONS.get(token, 0)
+    if expires_at <= time.time():
+        if token:
+            _SESSIONS.pop(token, None)
+        return False
+    return True
 
 
 def _check_api_key(
     request: Request,
     x_api_key: Optional[str],
+    authorization: Optional[str] = None,
 ) -> None:
     """공통 인증 로직."""
+    if _has_valid_session(authorization):
+        return
     if _API_KEY:
-        if x_api_key != _API_KEY:
+        if not x_api_key or not secrets.compare_digest(x_api_key, _API_KEY):
             raise HTTPException(status_code=401, detail="invalid api key")
         return
 
@@ -135,14 +164,16 @@ def _check_api_key(
 def require_api_key(
     request: Request,
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> None:
     """쓰기 엔드포인트 보호."""
-    _check_api_key(request, x_api_key)
+    _check_api_key(request, x_api_key, authorization)
 
 
 def require_read_auth(
     request: Request,
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> None:
     """자산 정보 노출 읽기 엔드포인트 보호.
 
@@ -151,7 +182,7 @@ def require_read_auth(
     """
     if not _READ_REQUIRE_AUTH:
         return
-    _check_api_key(request, x_api_key)
+    _check_api_key(request, x_api_key, authorization)
 
 
 app.add_middleware(
@@ -162,7 +193,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     # X-API-Key 헤더 허용 명시
-    allow_headers=["*", "X-API-Key"],
+    allow_headers=["*", "X-API-Key", "Authorization"],
 )
 
 _SENSITIVE_API_PREFIXES = (
@@ -172,6 +203,10 @@ _SENSITIVE_API_PREFIXES = (
     "/api/prices",
     "/api/export",
     "/api/market/insights",
+    "/api/auth",
+    "/api/cash-flows",
+    "/api/performance",
+    "/api/decisions",
 )
 
 
@@ -194,6 +229,34 @@ def _cache_stale_hours(updated_at: str | None) -> float | None:
         return (datetime.now() - ts).total_seconds() / 3600
     except Exception:
         return None
+
+
+class SessionCreate(BaseModel):
+    api_key: str
+
+
+@app.post("/api/auth/session")
+async def create_session(body: SessionCreate):
+    """마스터 키를 짧게 검증하고 만료되는 불투명 세션으로 교환한다."""
+    if not _API_KEY or not secrets.compare_digest(body.api_key.strip(), _API_KEY):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    token = secrets.token_urlsafe(32)
+    expires_at = time.time() + _SESSION_TTL_SECONDS
+    _SESSIONS[token] = expires_at
+    return {
+        "token": token,
+        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+    }
+
+
+@app.delete("/api/auth/session")
+async def delete_session(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+):
+    token = _session_token(authorization)
+    if token:
+        _SESSIONS.pop(token, None)
+    return {"status": "ok"}
 
 
 @app.get("/api/health")
@@ -308,6 +371,76 @@ async def get_portfolio_history(days: int = 365):
     except Exception as e:
         logger.error(f"히스토리 조회 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class CashFlowCreate(BaseModel):
+    flow_type: str
+    amount_krw: int
+    occurred_on: str
+    account_name: Optional[str] = None
+    note: Optional[str] = None
+
+
+@app.get("/api/cash-flows", dependencies=[Depends(require_read_auth)])
+async def get_cash_flows(days: int = 730):
+    return {"items": list_cash_flows(days=days)}
+
+
+@app.post("/api/cash-flows", dependencies=[Depends(require_api_key)])
+async def create_cash_flow(body: CashFlowCreate):
+    try:
+        flow_id = insert_cash_flow(**body.model_dump())
+        return {"id": flow_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/cash-flows/{flow_id}", dependencies=[Depends(require_api_key)])
+async def remove_cash_flow(flow_id: int):
+    if not delete_cash_flow(flow_id):
+        raise HTTPException(status_code=404, detail="cash flow not found")
+    return {"status": "ok"}
+
+
+@app.get("/api/performance", dependencies=[Depends(require_read_auth)])
+async def get_performance(days: int = 730):
+    history = get_history(days=days)
+    flows = list_cash_flows(days=days)
+    return calculate_performance(history, flows)
+
+
+class DecisionCreate(BaseModel):
+    title: str
+    thesis: str
+    review_on: Optional[str] = None
+
+
+class DecisionUpdate(BaseModel):
+    status: str
+    outcome_note: Optional[str] = None
+
+
+@app.get("/api/decisions", dependencies=[Depends(require_read_auth)])
+async def get_decisions(limit: int = 100):
+    return {"items": list_decisions(limit=min(max(1, limit), 200))}
+
+
+@app.post("/api/decisions", dependencies=[Depends(require_api_key)])
+async def add_decision(body: DecisionCreate):
+    try:
+        return {"id": create_decision(**body.model_dump())}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/decisions/{decision_id}", dependencies=[Depends(require_api_key)])
+async def patch_decision(decision_id: int, body: DecisionUpdate):
+    try:
+        if not update_decision(decision_id, **body.model_dump()):
+            raise HTTPException(status_code=404, detail="decision not found")
+        return {"status": "ok"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/history/backfill", dependencies=[Depends(require_api_key)])

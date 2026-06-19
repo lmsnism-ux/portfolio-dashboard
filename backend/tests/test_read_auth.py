@@ -77,6 +77,31 @@ class ReadAuthTest(unittest.TestCase):
         res = client.get("/api/portfolio", headers={"X-API-Key": "wrong"})
         self.assertEqual(res.status_code, 401)
 
+    def test_session_replaces_stored_master_key(self) -> None:
+        """마스터 키로 만료 세션을 발급받고 Bearer 인증을 사용할 수 있다."""
+        os.environ["READ_REQUIRE_AUTH"] = "1"
+        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
+        client = self._reload_app()
+        login = client.post("/api/auth/session", json={"api_key": "secret-xyz"})
+        self.assertEqual(login.status_code, 200)
+        token = login.json()["token"]
+        res = client.get("/api/portfolio", headers={"Authorization": f"Bearer {token}"})
+        self.assertNotEqual(res.status_code, 401)
+
+    def test_session_rejects_wrong_master_key(self) -> None:
+        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
+        client = self._reload_app()
+        res = client.post("/api/auth/session", json={"api_key": "wrong"})
+        self.assertEqual(res.status_code, 401)
+
+    def test_deleted_session_cannot_read(self) -> None:
+        os.environ["PORTFOLIO_API_KEY"] = "secret-xyz"
+        client = self._reload_app()
+        token = client.post("/api/auth/session", json={"api_key": "secret-xyz"}).json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        self.assertEqual(client.delete("/api/auth/session", headers=headers).status_code, 200)
+        self.assertEqual(client.get("/api/portfolio", headers=headers).status_code, 401)
+
     def test_market_endpoints_remain_public(self) -> None:
         """공개 시장 데이터(/api/market/*)는 READ_REQUIRE_AUTH 영향 없음."""
         os.environ["READ_REQUIRE_AUTH"] = "1"
