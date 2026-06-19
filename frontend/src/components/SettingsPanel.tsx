@@ -29,7 +29,6 @@ interface Props {
   onToggleDc: () => void;
   onToggleRealEstate: () => void;
   onToggleLoan: () => void;
-  onLogout: () => void;
 }
 
 function ToggleRow({
@@ -74,7 +73,6 @@ export default function SettingsPanel({
   onToggleDc,
   onToggleRealEstate,
   onToggleLoan,
-  onLogout,
 }: Props) {
   const queryClient = useQueryClient();
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
@@ -157,7 +155,7 @@ export default function SettingsPanel({
             </span>
           </button>
           <button
-            onClick={() => { void deleteSession().finally(onLogout); }}
+            onClick={() => { void deleteSession(); }}
             className="settings-action"
           >
             <LogOut size={19} />
