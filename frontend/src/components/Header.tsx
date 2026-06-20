@@ -1,6 +1,7 @@
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import type { PortfolioSummary } from '../types';
 import { applyDisplayToggles, colorClass, fmtAbsTime, fmtKRW, fmtKRWFull, fmtPct } from '../utils';
+import { useCountUp } from '../hooks/useCountUp';
 
 interface Props {
   data: PortfolioSummary;
@@ -15,6 +16,7 @@ interface Props {
 
 export default function Header({ data, hideAssets, realEstateOn, loanOn, dcOn, onToggleHide, onRefresh, isRefreshing }: Props) {
   const display = applyDisplayToggles(data, { dcOn, realEstateOn, loanOn });
+  const animatedTotal = useCountUp(display.total);
   return (
     <header className="hero-header">
       <div className="mx-auto max-w-3xl px-5 pb-7 pt-5">
@@ -30,7 +32,7 @@ export default function Header({ data, hideAssets, realEstateOn, loanOn, dcOn, o
         </div>
 
         <p className="text-[14px] font-medium text-toss-text-secondary">총 자산</p>
-        <h1 className="num mt-2 text-[42px] font-extrabold leading-none tracking-[-0.04em] text-toss-text-primary sm:text-[48px]">{hideAssets ? '••••••' : fmtKRW(display.total)}</h1>
+        <h1 className="num mt-2 text-[42px] font-extrabold leading-none tracking-[-0.04em] text-toss-text-primary sm:text-[48px]">{hideAssets ? '••••••' : fmtKRW(Math.round(animatedTotal))}</h1>
         {!hideAssets && <p className="num mt-2 text-[13px] text-toss-text-tertiary">{fmtKRWFull(display.total)}</p>}
 
         <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
