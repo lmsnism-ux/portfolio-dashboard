@@ -224,6 +224,7 @@ export default function App() {
                 data={data}
                 hideAssets={hideAssets}
                 onOpenAnalysis={() => handleTabChange('analysis')}
+                onOpenAssets={() => handleTabChange('assets')}
               />
             </Suspense>
             <DecisionCenter data={data} onOpenAnalysis={() => handleTabChange('analysis')} />

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ArrowLeftRight } from 'lucide-react';
 import {
   Area,
   AreaChart,
@@ -17,7 +19,22 @@ interface Props {
   data: PortfolioSummary;
   hideAssets: boolean;
   onOpenAnalysis: () => void;
+  onOpenAssets: () => void;
 }
+
+type AllocationMode = 'asset' | 'account' | 'region';
+
+interface AllocationItem {
+  name: string;
+  value_krw: number;
+  weight: number;
+}
+
+const ALLOCATION_MODES: Array<{ key: AllocationMode; label: string }> = [
+  { key: 'asset', label: '자산군' },
+  { key: 'account', label: '계좌' },
+  { key: 'region', label: '지역' },
+];
 
 const CLASS_NAMES: Record<string, string> = {
   stock: '주식',
@@ -49,10 +66,23 @@ function HistoryTooltip({
   );
 }
 
-export default function HomeCharts({ data, hideAssets, onOpenAnalysis }: Props) {
-  const allocation = data.asset_class_weights
+export default function HomeCharts({ data, hideAssets, onOpenAnalysis, onOpenAssets }: Props) {
+  const [allocationMode, setAllocationMode] = useState<AllocationMode>('asset');
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const allocationSource: AllocationItem[] = allocationMode === 'asset'
+    ? data.asset_class_weights
+    : allocationMode === 'account'
+      ? data.account_weights
+      : data.region_weights;
+  const allocation = allocationSource
     .filter((item) => item.value_krw > 0)
     .sort((a, b) => b.value_krw - a.value_krw);
+  const activeItem = allocation[activeIndex ?? 0];
+
+  const displayName = (name: string) => allocationMode === 'asset'
+    ? (CLASS_NAMES[name] ?? name)
+    : name;
 
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['history'],
@@ -81,9 +111,29 @@ export default function HomeCharts({ data, hideAssets, onOpenAnalysis }: Props) 
 
       <div className="grid gap-3 p-4 sm:grid-cols-2">
         <div className="rounded-2xl bg-toss-bg p-4">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h3 className="text-[13px] font-bold text-toss-text-primary">자산 배분</h3>
-            <span className="text-[11px] text-toss-text-tertiary">자산군별</span>
+            <div className="flex rounded-xl bg-toss-card p-1" role="tablist" aria-label="자산 배분 기준">
+              {ALLOCATION_MODES.map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={allocationMode === mode.key}
+                  onClick={() => {
+                    setAllocationMode(mode.key);
+                    setActiveIndex(null);
+                  }}
+                  className={`min-h-8 rounded-lg px-2 text-[10px] font-bold transition-colors ${
+                    allocationMode === mode.key
+                      ? 'bg-toss-blue text-white'
+                      : 'text-toss-text-tertiary hover:text-toss-text-primary'
+                  }`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {allocation.length > 0 ? (
@@ -98,30 +148,25 @@ export default function HomeCharts({ data, hideAssets, onOpenAnalysis }: Props) 
                       outerRadius={67}
                       paddingAngle={2.5}
                       stroke="none"
+                      isAnimationActive={false}
+                      onMouseEnter={(_, index) => setActiveIndex(index)}
+                      onMouseLeave={() => setActiveIndex(null)}
                     >
                       {allocation.map((item, index) => (
                         <Cell key={item.name} fill={chartColor(index)} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value) => hideAssets ? '••••••' : fmtKRW(Number(value))}
-                      labelFormatter={() => ''}
-                      contentStyle={{
-                        borderRadius: 12,
-                        borderColor: 'var(--color-toss-border)',
-                        background: 'var(--color-toss-card)',
-                        fontSize: 12,
-                      }}
-                    />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-[10px] text-toss-text-tertiary">가장 큰 비중</span>
-                  <strong className="mt-0.5 text-[13px] text-toss-text-primary">
-                    {CLASS_NAMES[allocation[0].name] ?? allocation[0].name}
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-[62px] text-center">
+                  <span className="whitespace-nowrap text-[10px] text-toss-text-tertiary">
+                    {activeIndex === null ? '가장 큰 비중' : '선택한 항목'}
+                  </span>
+                  <strong className="mt-0.5 max-w-full truncate text-[13px] text-toss-text-primary">
+                    {displayName(activeItem.name)}
                   </strong>
                   <span className="num text-[11px] font-semibold text-toss-blue">
-                    {allocation[0].weight.toFixed(1)}%
+                    {activeItem.weight.toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -131,7 +176,7 @@ export default function HomeCharts({ data, hideAssets, onOpenAnalysis }: Props) 
                   <li key={item.name} className="flex min-w-0 items-center gap-1.5 text-[11px]">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: chartColor(index) }} />
                     <span className="truncate text-toss-text-secondary">
-                      {CLASS_NAMES[item.name] ?? item.name}
+                      {displayName(item.name)}
                     </span>
                     <span className="num ml-auto shrink-0 font-semibold text-toss-text-primary">
                       {item.weight.toFixed(0)}%
@@ -198,6 +243,17 @@ export default function HomeCharts({ data, hideAssets, onOpenAnalysis }: Props) 
             )}
           </div>
         </div>
+      </div>
+
+      <div className="border-t border-toss-border px-4 py-3">
+        <button
+          type="button"
+          onClick={onOpenAssets}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-bold text-toss-blue transition-colors hover:bg-toss-blue-soft"
+        >
+          <ArrowLeftRight size={15} aria-hidden="true" />
+          최근 매수·매도 반영하기
+        </button>
       </div>
     </section>
   );
