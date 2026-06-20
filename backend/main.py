@@ -462,6 +462,10 @@ class HoldingUpdate(BaseModel):
     remove_auto_buy: bool = False  # True → auto_buy 키 완전 제거
 
 
+class BulkHoldingUpdate(BaseModel):
+    updates: list[HoldingUpdate]
+
+
 @app.patch("/api/portfolio/holding", dependencies=[Depends(require_api_key)])
 async def update_holding(update: HoldingUpdate):
     """종목 보유수량/평단가/자동매수 수정"""
@@ -509,6 +513,50 @@ async def update_holding(update: HoldingUpdate):
         raise
     except Exception as e:
         logger.error(f"holding 수정 오류: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/portfolio/holdings/bulk", dependencies=[Depends(require_api_key)])
+async def update_holdings_bulk(request: BulkHoldingUpdate):
+    """캡처 검토 결과를 모두 검증한 뒤 한 번에 저장한다."""
+    try:
+        if not request.updates or len(request.updates) > 100:
+            raise HTTPException(status_code=400, detail="수정할 종목은 1~100개여야 합니다")
+        portfolio = load_portfolio()
+        resolved: list[tuple[dict, HoldingUpdate]] = []
+
+        for update in request.updates:
+            if update.shares is None or update.shares < 0:
+                raise HTTPException(status_code=400, detail="보유 수량은 0 이상이어야 합니다")
+            if update.avg_price_krw is not None and update.avg_price_krw <= 0:
+                raise HTTPException(status_code=400, detail="원화 평단은 0보다 커야 합니다")
+            if update.avg_price_usd is not None and update.avg_price_usd <= 0:
+                raise HTTPException(status_code=400, detail="달러 평단은 0보다 커야 합니다")
+
+            account = next((item for item in portfolio["accounts"] if item["name"] == update.account_name), None)
+            if not account:
+                raise HTTPException(status_code=404, detail=f"계좌를 찾을 수 없습니다: {update.account_name}")
+            holding = next((item for item in account["holdings"] if (
+                (item.get("ticker") and item["ticker"] == update.holding_key)
+                or (not item.get("ticker") and item.get("name") == update.holding_key)
+            )), None)
+            if not holding:
+                raise HTTPException(status_code=404, detail=f"종목을 찾을 수 없습니다: {update.holding_key}")
+            resolved.append((holding, update))
+
+        for holding, update in resolved:
+            holding["shares"] = update.shares
+            if update.avg_price_krw is not None:
+                holding["avg_price_krw"] = update.avg_price_krw
+            if update.avg_price_usd is not None:
+                holding["avg_price_usd"] = update.avg_price_usd
+
+        save_portfolio(portfolio)
+        return {"status": "ok", "updated": len(resolved)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"holding 일괄 수정 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

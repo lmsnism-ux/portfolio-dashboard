@@ -187,6 +187,18 @@ export async function patchHolding(body: HoldingPatch): Promise<void> {
   }
 }
 
+export async function patchHoldingsBulk(updates: HoldingPatch[]): Promise<void> {
+  const res = await writeFetch(`${BASE}/portfolio/holdings/bulk`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ updates }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `API error ${res.status}`);
+  }
+}
+
 export async function patchGoal(body: { goal_krw?: number; long_goal_krw?: number }): Promise<void> {
   const res = await writeFetch(`${BASE}/portfolio/goal`, {
     method: 'PATCH',
@@ -285,6 +297,29 @@ export interface TickerHistory {
 
 export async function fetchTickerHistory(ticker: string, range = '1mo'): Promise<TickerHistory> {
   const res = await fetch(`${BASE}/market/history/${encodeURIComponent(ticker)}?range=${range}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export interface MarketIndexValue {
+  label: string;
+  symbol: string;
+  value: number | null;
+  change: number | null;
+  change_pct: number | null;
+}
+
+export type MarketIndices = Record<string, MarketIndexValue>;
+export type MarketSparklines = Record<string, number[]>;
+
+export async function fetchMarketIndices(): Promise<MarketIndices> {
+  const res = await fetch(`${BASE}/market/indices`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMarketSparklines(): Promise<MarketSparklines> {
+  const res = await fetch(`${BASE}/market/sparkline`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
