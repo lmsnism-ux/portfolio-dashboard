@@ -1,4 +1,4 @@
-import type { CashFlowRecord, HistoryPoint, InvestmentDecision, MarketInsights, PerformanceSummary, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
+import type { CashFlowRecord, HistoryPoint, InvestmentDecision, PerformanceSummary, PortfolioSummary, TradeAggregate, TradeRecord } from './types';
 
 // dev에서는 vite proxy가 /api를 백엔드로 forward.
 // 배포 시 VITE_API_BASE=https://your-api.onrender.com 같이 지정.
@@ -266,41 +266,6 @@ export async function deleteAccount(name: string): Promise<void> {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `API error ${res.status}`);
-  }
-}
-
-export interface MarketIndex {
-  label: string;
-  symbol: string;
-  value: number | null;
-  prev: number | null;
-  change: number | null;
-  change_pct: number | null;
-}
-
-export async function fetchMarketIndices(): Promise<Record<string, MarketIndex>> {
-  try {
-    const res = await fetch(`${BASE}/market/indices`);
-    if (!res.ok) return {};
-    return res.json();
-  } catch {
-    return {};
-  }
-}
-
-export async function fetchMarketInsights(): Promise<MarketInsights> {
-  const res = await readFetch(`${BASE}/market/insights`);
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
-}
-
-export async function fetchSparkline(): Promise<Record<string, number[]>> {
-  try {
-    const res = await fetch(`${BASE}/market/sparkline`);
-    if (!res.ok) return {};
-    return res.json();
-  } catch {
-    return {};
   }
 }
 

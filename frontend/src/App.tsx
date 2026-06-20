@@ -1,10 +1,9 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { fetchPortfolio, isAuthError, triggerRefresh, reorderAccounts } from './api';
+import { fetchPortfolio, isAuthError, triggerRefresh } from './api';
 import Header from './components/Header';
 import BottomNav, { type TabKey } from './components/BottomNav';
-import MarketIndicesCard from './components/MarketIndicesCard';
 import AutoBuyCard from './components/AutoBuyCard';
 import RealEstateCard from './components/RealEstateCard';
 import CashCard from './components/CashCard';
@@ -23,14 +22,10 @@ import DecisionCenter from './components/DecisionCenter';
 
 // 부가 컴포넌트: 첫 화면에 즉시 필요 없음 → lazy load
 const RebalanceCard      = lazy(() => import('./components/RebalanceCard'));
-const ProfitHeatmap      = lazy(() => import('./components/ProfitHeatmap'));
-const MarketInsightsCard = lazy(() => import('./components/MarketInsightsCard'));
-const QuickTradeCard     = lazy(() => import('./components/QuickTradeCard'));
 const HistoryChart       = lazy(() => import('./components/HistoryChart'));
 const GoalCard           = lazy(() => import('./components/GoalCard'));
 const AllocationCard     = lazy(() => import('./components/AllocationCard'));
 const TaxOptimizerCard   = lazy(() => import('./components/TaxOptimizerCard'));
-const HoldingsBar        = lazy(() => import('./components/HoldingsBar'));
 const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
 const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
 const AddAccountModal   = lazy(() => import('./components/AddAccountModal'));
@@ -64,8 +59,8 @@ export default function App() {
   const [dcOn, setDcOn] = useState(() => localStorage.getItem(DC_KEY) !== '0');
   const [tab, setTab] = useState<TabKey>(() => {
     const saved = localStorage.getItem(TAB_KEY);
-    return (saved === 'home' || saved === 'assets' || saved === 'analysis' || saved === 'market' || saved === 'more')
-      ? saved : 'home';
+    if (saved === 'market') return 'analysis';
+    return (saved === 'home' || saved === 'assets' || saved === 'analysis' || saved === 'more') ? saved : 'home';
   });
 
   const handleTabChange = (next: TabKey) => {
@@ -123,20 +118,6 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ['history'] });
     },
   });
-
-  const reorderMutation = useMutation({
-    mutationFn: reorderAccounts,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
-  });
-
-  const moveAccount = (idx: number, dir: -1 | 1) => {
-    if (!data) return;
-    const newOrder = data.accounts.map((a) => a.name);
-    const target = idx + dir;
-    if (target < 0 || target >= newOrder.length) return;
-    [newOrder[idx], newOrder[target]] = [newOrder[target], newOrder[idx]];
-    reorderMutation.mutate(newOrder);
-  };
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -212,9 +193,9 @@ export default function App() {
         />
       )}
       {tab !== 'home' && (
-        <div className="max-w-2xl mx-auto px-5 pt-6 pb-2">
+        <div className="max-w-3xl mx-auto px-5 pt-7 pb-2">
           <h1 className="text-[22px] font-bold text-toss-text-primary">
-            {tab === 'assets' ? '내 자산' : tab === 'analysis' ? '자산 분석' : tab === 'market' ? '시장' : '더보기'}
+            {tab === 'assets' ? '내 자산' : tab === 'analysis' ? '자산 분석' : '관리'}
           </h1>
           {tab === 'assets' && (
             <div className="mt-1.5">
@@ -234,29 +215,20 @@ export default function App() {
         </div>
       )}
 
-      <main key={tab} className="tab-screen max-w-2xl mx-auto px-4 py-5 space-y-4 pb-24">
+      <main key={tab} className="tab-screen max-w-3xl mx-auto px-4 sm:px-5 py-5 space-y-5 pb-28">
         {tab === 'home' && (
           <>
-            <DecisionCenter data={data} hideAssets={hideAssets} onOpenAnalysis={() => handleTabChange('analysis')} />
+            <DecisionCenter data={data} onOpenAnalysis={() => handleTabChange('analysis')} />
             <HomeOverview
               data={data}
               hideAssets={hideAssets}
               onOpenAssets={() => handleTabChange('assets')}
-              onOpenAnalysis={() => handleTabChange('analysis')}
             />
           </>
         )}
 
         {tab === 'assets' && (
           <>
-            <Suspense fallback={null}>
-              <QuickTradeCard
-                data={data}
-                onTrade={(acc, h, side) => setTrading({ account: acc, holding: h, side })}
-                onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
-              />
-            </Suspense>
-
             {/* 보유 종목 - 카테고리별 항상 펼쳐진 뷰 + 편집 모드 */}
             <HoldingsList
               data={data}
@@ -264,16 +236,8 @@ export default function App() {
               onEdit={(acc, h) => setEditing({ account: acc, holding: h })}
               onAdd={(acc) => setAdding(acc)}
               onTrade={(acc, h) => setTrading({ account: acc, holding: h })}
-              onMoveAccount={moveAccount}
               onAddAccount={() => setAddingAccount(true)}
             />
-
-            {/* 종목별 비중 바 차트 */}
-            {data.top_holdings?.length > 0 && (
-              <Suspense fallback={null}>
-                <HoldingsBar data={data} hideAssets={hideAssets} />
-              </Suspense>
-            )}
 
             {/* 부동산 · 대출 */}
             {data.real_estate && (
@@ -308,22 +272,17 @@ export default function App() {
               loanOn={loanOn}
             />
             <PortfolioRiskCard data={data} />
-            <ValueReportCard data={data} hideAssets={hideAssets} />
             <AllocationCard data={data} hideAssets={hideAssets} />
-            <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
             {goalCard}
-            <RebalanceCard data={data} hideAssets={hideAssets} />
+            <details className="surface-card overflow-hidden">
+              <summary className="flex min-h-16 cursor-pointer items-center px-5 text-[15px] font-bold text-toss-text-primary">고급 분석과 절세 보기</summary>
+              <div className="space-y-4 border-t border-toss-border p-4">
+                <ValueReportCard data={data} hideAssets={hideAssets} />
+                <TaxOptimizerCard tax={data.tax_optimization} hideAssets={hideAssets} />
+                <RebalanceCard data={data} hideAssets={hideAssets} />
+              </div>
+            </details>
           </Suspense>
-        )}
-
-        {tab === 'market' && (
-          <>
-            <MarketIndicesCard />
-            <Suspense fallback={null}>
-              <MarketInsightsCard />
-              <ProfitHeatmap />
-            </Suspense>
-          </>
         )}
 
         {tab === 'more' && (

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Receipt } from 'lucide-react';
+import { X, Receipt, Trash2 } from 'lucide-react';
 import type { AccountData, HoldingData } from '../types';
-import { patchHolding } from '../api';
+import { deleteHolding, patchHolding } from '../api';
 import TradeModal from './TradeModal';
 
 interface Props {
@@ -15,6 +15,8 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
   const queryClient = useQueryClient();
   const isUsd = holding.currency === 'USD';
   const [tradeOpen, setTradeOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const [shares, setShares] = useState<string>(holding.shares?.toString() ?? '');
   const [avgPrice, setAvgPrice] = useState<string>(
@@ -43,16 +45,32 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
       onClose();
     },
   });
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteHolding(account.name, holding.ticker || holding.name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      onClose();
+    },
+  });
 
   useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input, select')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
+      previousFocus?.focus();
     };
   }, [onClose]);
 
@@ -86,29 +104,31 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="종목 편집"
+        aria-labelledby="edit-holding-title"
         className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between">
           <div>
             <p className="text-xs text-toss-text-tertiary">{account.name}</p>
-            <h2 className="text-lg font-bold text-toss-text-primary">{holding.name}</h2>
+            <h2 id="edit-holding-title" className="text-xl font-bold text-toss-text-primary">{holding.name}</h2>
             {holding.ticker && (
               <p className="text-[11px] text-toss-text-tertiary">{holding.ticker}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-toss-bg active:scale-95 transition-all"
+            aria-label="종목 수정 닫기"
+            className="icon-button"
           >
             <X size={18} className="text-toss-text-secondary" />
           </button>
         </div>
 
-        <div className="px-5 py-2 space-y-4">
+        <div className="px-5 py-3 space-y-5">
           {holding.is_snapshot ? (
             /* 예수금/스냅샷 종목: 잔액만 편집 */
             <Field label={`잔액 (${isUsd ? 'USD' : 'KRW'})`}>
@@ -198,8 +218,24 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
           </div>
 
           {mutation.isError && (
-            <p className="text-xs text-toss-up">저장 실패: {(mutation.error as Error).message}</p>
+            <p role="alert" className="text-sm text-toss-danger">저장 실패: 편집 권한을 연결한 뒤 다시 시도해주세요.</p>
           )}
+          {deleteMutation.isError && <p role="alert" className="text-sm text-toss-danger">삭제 실패: 편집 권한을 연결한 뒤 다시 시도해주세요.</p>}
+
+          <div className="border-t border-toss-border pt-4">
+            {confirmDelete ? (
+              <div className="rounded-2xl bg-red-500/10 p-4">
+                <p className="text-sm font-semibold text-toss-text-primary">이 종목을 삭제할까요?</p>
+                <p className="mt-1 text-[13px] text-toss-text-secondary">삭제하면 되돌릴 수 없습니다.</p>
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => setConfirmDelete(false)} className="secondary-button flex-1 justify-center">취소</button>
+                  <button onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} className="danger-button flex-1 justify-center">삭제</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="flex min-h-11 items-center gap-2 text-[14px] font-semibold text-toss-danger"><Trash2 size={17} /> 종목 삭제</button>
+            )}
+          </div>
         </div>
 
         <div className="sticky bottom-0 bg-toss-card px-5 pt-3 pb-5 border-t border-toss-border flex gap-2">
@@ -247,6 +283,9 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
     <button
       type="button"
       onClick={() => onChange(!checked)}
+      role="switch"
+      aria-checked={checked}
+      aria-label="자동매수 사용"
       className={`w-11 h-6 rounded-full transition-colors relative ${
         checked ? 'bg-toss-blue' : 'bg-toss-border'
       }`}

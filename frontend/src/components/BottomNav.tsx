@@ -1,13 +1,12 @@
-import { ChartNoAxesCombined, Home, Menu, PieChart, TrendingUp } from 'lucide-react';
+import { ChartNoAxesCombined, Home, Menu, PieChart } from 'lucide-react';
 
-export type TabKey = 'home' | 'assets' | 'analysis' | 'market' | 'more';
+export type TabKey = 'home' | 'assets' | 'analysis' | 'more';
 
 const TABS: { key: TabKey; label: string; Icon: typeof Home }[] = [
   { key: 'home',   label: '홈',     Icon: Home },
   { key: 'assets', label: '자산',   Icon: PieChart },
   { key: 'analysis', label: '분석', Icon: ChartNoAxesCombined },
-  { key: 'market', label: '시장',   Icon: TrendingUp },
-  { key: 'more',   label: '더보기', Icon: Menu },
+  { key: 'more',   label: '관리', Icon: Menu },
 ];
 
 interface Props {
@@ -18,7 +17,7 @@ interface Props {
 export default function BottomNav({ active, onChange }: Props) {
   return (
     <nav className="bottom-nav fixed bottom-0 inset-x-0 z-40">
-      <div className="max-w-2xl mx-auto flex">
+      <div className="max-w-3xl mx-auto flex">
         {TABS.map(({ key, label, Icon }) => {
           const isActive = active === key;
           return (
