@@ -274,6 +274,13 @@ button {
 }
 .row-button:hover,
 .holding-row:hover { background: color-mix(in srgb, var(--color-toss-bg) 68%, transparent); }
+/* 누르는 촉감 (토스 감성) — 모션 줄이기 설정 시 비활성 */
+.row-button, .bottom-nav button { transition: transform 0.12s ease, background 0.15s ease; }
+.row-button:active { transform: scale(0.99); background: color-mix(in srgb, var(--color-toss-bg) 80%, transparent); }
+.bottom-nav button:active { transform: scale(0.94); }
+@media (prefers-reduced-motion: reduce) {
+  .row-button:active, .bottom-nav button:active { transform: none; }
+}
 .icon-button {
   display: inline-flex;
   width: 44px;

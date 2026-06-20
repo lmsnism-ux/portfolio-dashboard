@@ -16,6 +16,30 @@ function normalized(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/[^a-z0-9가-힣]/g, '');
 }
 
+function bigrams(value: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (let i = 0; i < value.length - 1; i += 1) {
+    const gram = value.slice(i, i + 2);
+    map.set(gram, (map.get(gram) ?? 0) + 1);
+  }
+  return map;
+}
+
+// needle(종목명/티커)가 haystack(OCR 한 줄)에 얼마나 들어있는지 0~1. 부분 일치·OCR 잡음에 강함.
+function containment(needle: string, haystack: string): number {
+  if (needle.length < 2) return needle.length > 0 && haystack.includes(needle) ? 1 : 0;
+  if (haystack.includes(needle)) return 1;
+  const hay = bigrams(haystack);
+  const need = bigrams(needle);
+  let hit = 0;
+  let total = 0;
+  for (const [gram, count] of need) {
+    total += count;
+    hit += Math.min(count, hay.get(gram) ?? 0);
+  }
+  return total ? hit / total : 0;
+}
+
 function numbersIn(value: string, ticker: string | null): number[] {
   return (value.match(/[-+]?\d[\d,]*(?:\.\d+)?/g) ?? [])
     .filter((token) => token.replace(/,/g, '') !== ticker)
@@ -30,20 +54,32 @@ function closest(values: number[], target: number | null, excluded?: number): nu
   return [...pool].sort((a, b) => Math.abs(Math.log((a || 0.0001) / target)) - Math.abs(Math.log((b || 0.0001) / target)))[0];
 }
 
+const MATCH_THRESHOLD = 0.6;
+
 function extractCandidates(text: string, account: AccountData): CandidateRow[] {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const keyedLines = lines.map((line) => normalized(line));
   const rows: CandidateRow[] = [];
 
   account.holdings.filter((holding) => !holding.is_snapshot).forEach((holding) => {
     const nameKey = normalized(holding.name);
     const tickerKey = normalized(holding.ticker ?? '');
-    const index = lines.findIndex((line) => {
-      const key = normalized(line);
-      return (tickerKey.length >= 3 && key.includes(tickerKey)) || (nameKey.length >= 3 && key.includes(nameKey));
-    });
-    if (index < 0) return;
 
-    const source = lines.slice(index, index + 3).join(' ');
+    // OCR 잡음을 견디는 퍼지 매칭: 줄마다 이름/티커 포함도 점수를 매겨 최고점 줄을 고른다.
+    let bestIndex = -1;
+    let bestScore = 0;
+    keyedLines.forEach((key, index) => {
+      let score = 0;
+      if (tickerKey.length >= 2) score = Math.max(score, containment(tickerKey, key));
+      if (nameKey.length >= 2) score = Math.max(score, containment(nameKey, key));
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex < 0 || bestScore < MATCH_THRESHOLD) return;
+
+    const source = lines.slice(bestIndex, bestIndex + 3).join(' ');
     const values = numbersIn(source, holding.ticker);
     if (!values.length) return;
     const shares = closest(values, holding.shares);
@@ -63,7 +99,7 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
 export default function ScreenshotImportCard({ data }: { data: PortfolioSummary }) {
   const queryClient = useQueryClient();
   const [accountName, setAccountName] = useState(data.accounts[0]?.name ?? '');
-  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<CandidateRow[]>([]);
@@ -74,20 +110,25 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
   );
 
   useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [previewUrls]);
 
-  const recognize = async (file: File) => {
-    if (!account) return;
-    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
+  const recognizeFiles = async (files: File[]) => {
+    if (!account || !files.length) return;
+    const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= 10 * 1024 * 1024);
+    if (!valid.length) {
       setStatus('10MB 이하의 PNG, JPG 또는 WebP 이미지를 선택해주세요.');
       return;
     }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(file));
+    setPreviewUrls((current) => {
+      current.forEach((url) => URL.revokeObjectURL(url));
+      return valid.map((file) => URL.createObjectURL(file));
+    });
     setRows([]);
     setProgress(0);
-    setStatus('이미지에서 글자를 읽는 중이에요. 처음에는 한글 인식 파일을 내려받아 조금 걸릴 수 있어요.');
+    setStatus(valid.length > 1
+      ? `이미지 ${valid.length}장에서 글자를 읽는 중이에요. 처음에는 한글 인식 파일을 내려받아 조금 걸릴 수 있어요.`
+      : '이미지에서 글자를 읽는 중이에요. 처음에는 한글 인식 파일을 내려받아 조금 걸릴 수 있어요.');
 
     let worker: Awaited<ReturnType<(typeof import('tesseract.js'))['createWorker']>> | null = null;
     try {
@@ -97,8 +138,19 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           if (message.status === 'recognizing text') setProgress(Math.round((message.progress ?? 0) * 100));
         },
       });
-      const result = await worker.recognize(file);
-      const candidates = extractCandidates(result.data.text, account);
+      // 여러 장을 순차 인식해 후보를 누적·병합(같은 종목은 수량이 채워진 쪽 우선).
+      const merged = new Map<string, CandidateRow>();
+      for (let i = 0; i < valid.length; i += 1) {
+        if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
+        setProgress(0);
+        const result = await worker.recognize(valid[i]);
+        for (const candidate of extractCandidates(result.data.text, account)) {
+          const key = candidate.holding.ticker || candidate.holding.name;
+          const existing = merged.get(key);
+          if (!existing || (!existing.shares && candidate.shares)) merged.set(key, candidate);
+        }
+      }
+      const candidates = [...merged.values()];
       setRows(candidates);
       setProgress(100);
       setStatus(candidates.length
@@ -174,16 +226,22 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           </label>
           <label className="secondary-button flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold">
             <ImagePlus size={17} />
-            캡처 선택
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void recognize(file);
+            캡처 선택 (여러 장)
+            <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" onChange={(event) => {
+              const files = event.target.files ? Array.from(event.target.files) : [];
+              if (files.length) void recognizeFiles(files);
               event.target.value = '';
             }} />
           </label>
         </div>
 
-        {previewUrl && <img src={previewUrl} alt="선택한 잔고 캡처 미리보기" className="mt-4 max-h-48 w-full rounded-2xl bg-toss-bg object-contain" />}
+        {previewUrls.length > 0 && (
+          <div className="mt-4 flex gap-2 overflow-x-auto scrollbar-none">
+            {previewUrls.map((url, index) => (
+              <img key={url} src={url} alt={`선택한 잔고 캡처 ${index + 1}`} className="h-40 w-auto shrink-0 rounded-2xl bg-toss-bg object-contain" />
+            ))}
+          </div>
+        )}
 
         {status && (
           <div className="mt-4 rounded-xl bg-toss-blue-soft px-4 py-3 text-xs leading-relaxed text-toss-text-secondary">
