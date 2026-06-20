@@ -82,10 +82,28 @@ async function readFetch(url: string, init: RequestInit = {}): Promise<Response>
   return res;
 }
 
+// 콜드스타트(Render 절전 30~60초) 동안 빈 화면 대신 직전 스냅샷을 즉시 보여주기 위한 캐시
+const PORTFOLIO_CACHE = 'pd_portfolio_cache';
+
+export function readCachedPortfolio(): PortfolioSummary | undefined {
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_CACHE);
+    return raw ? (JSON.parse(raw) as PortfolioSummary) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function fetchPortfolio(): Promise<PortfolioSummary> {
   const res = await readFetch(`${BASE}/portfolio`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  const data = (await res.json()) as PortfolioSummary;
+  try {
+    localStorage.setItem(PORTFOLIO_CACHE, JSON.stringify(data));
+  } catch {
+    /* 저장 용량 초과 등은 무시 (캐시는 보조 기능) */
+  }
+  return data;
 }
 
 export async function fetchHistory(days = 365): Promise<HistoryPoint[]> {

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { fetchPortfolio, isAuthError, triggerRefresh } from './api';
+import { fetchPortfolio, isAuthError, readCachedPortfolio, triggerRefresh } from './api';
 import Header from './components/Header';
 import BottomNav, { type TabKey } from './components/BottomNav';
 import AutoBuyCard from './components/AutoBuyCard';
@@ -100,9 +100,12 @@ export default function App() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['portfolio'],
     queryFn: fetchPortfolio,
+    // 콜드스타트 동안 직전 스냅샷을 즉시 표시(빈 화면 제거) → 0으로 stale 처리해 곧바로 백그라운드 갱신
+    initialData: readCachedPortfolio,
+    initialDataUpdatedAt: 0,
     refetchInterval: 7 * 60 * 1000,
     staleTime: 5 * 60 * 1000,
     // Render 무료 서버가 절전에서 깨어나는 데 30~60초 걸릴 수 있어 넉넉히 재시도
@@ -123,7 +126,8 @@ export default function App() {
 
   if (isLoading) return <DashboardSkeleton />;
 
-  if (isError || !data) {
+  // 캐시(initialData)가 있으면 data가 유지되므로, 데이터가 아예 없을 때만 오류/인증 화면을 보여준다.
+  if (!data) {
     const authRequired = isAuthError(error);
     return (
       <div className="min-h-[100dvh] bg-toss-bg flex items-center justify-center px-6">
