@@ -34,6 +34,7 @@ const PortfolioRiskCard = lazy(() => import('./components/PortfolioRiskCard'));
 const ValueReportCard   = lazy(() => import('./components/ValueReportCard'));
 const CashFlowCard      = lazy(() => import('./components/CashFlowCard'));
 const DecisionJournal   = lazy(() => import('./components/DecisionJournal'));
+const HomeCharts        = lazy(() => import('./components/HomeCharts'));
 
 const { DARK_MODE: DARK_KEY, HIDE_ASSETS: HIDE_KEY, REAL_ESTATE_SHOW: RE_KEY, DC_SHOW: DC_KEY, LOAN_ON: LOAN_KEY } = STORAGE_KEYS;
 const TAB_KEY = 'pd_tab';
@@ -218,6 +219,13 @@ export default function App() {
       <main key={tab} className="tab-screen max-w-3xl mx-auto px-4 sm:px-5 py-5 space-y-5 pb-28">
         {tab === 'home' && (
           <>
+            <Suspense fallback={<div className="skeleton h-[360px] rounded-[var(--radius-toss-lg)]" />}>
+              <HomeCharts
+                data={data}
+                hideAssets={hideAssets}
+                onOpenAnalysis={() => handleTabChange('analysis')}
+              />
+            </Suspense>
             <DecisionCenter data={data} onOpenAnalysis={() => handleTabChange('analysis')} />
             <HomeOverview
               data={data}
