@@ -24,7 +24,6 @@ import DecisionCenter from './components/DecisionCenter';
 const RebalanceCard      = lazy(() => import('./components/RebalanceCard'));
 const HistoryChart       = lazy(() => import('./components/HistoryChart'));
 const GoalCard           = lazy(() => import('./components/GoalCard'));
-const AllocationCard     = lazy(() => import('./components/AllocationCard'));
 const TaxOptimizerCard   = lazy(() => import('./components/TaxOptimizerCard'));
 const EditHoldingModal  = lazy(() => import('./components/EditHoldingModal'));
 const AddHoldingModal   = lazy(() => import('./components/AddHoldingModal'));
@@ -281,7 +280,6 @@ export default function App() {
               loanOn={loanOn}
             />
             <PortfolioRiskCard data={data} />
-            <AllocationCard data={data} hideAssets={hideAssets} />
             {goalCard}
             <details className="surface-card overflow-hidden">
               <summary className="flex min-h-16 cursor-pointer items-center px-5 text-[15px] font-bold text-toss-text-primary">고급 분석과 절세 보기</summary>

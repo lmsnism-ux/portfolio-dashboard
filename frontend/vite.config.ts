@@ -41,6 +41,7 @@ export default defineConfig({
         globIgnores: [
           '**/CategoricalChart-*.js',
           '**/CartesianChart-*.js',
+          '**/AreaChart-*.js',
           '**/tooltipContext-*.js',
         ],
         // 금융 API 응답은 서비스 워커에 저장하지 않는다.

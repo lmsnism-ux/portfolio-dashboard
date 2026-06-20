@@ -1,12 +1,8 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftRight } from 'lucide-react';
 import {
   Area,
   AreaChart,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,19 +18,11 @@ interface Props {
   onOpenAssets: () => void;
 }
 
-type AllocationMode = 'asset' | 'account' | 'region';
-
 interface AllocationItem {
   name: string;
   value_krw: number;
   weight: number;
 }
-
-const ALLOCATION_MODES: Array<{ key: AllocationMode; label: string }> = [
-  { key: 'asset', label: '자산군' },
-  { key: 'account', label: '계좌' },
-  { key: 'region', label: '지역' },
-];
 
 const CLASS_NAMES: Record<string, string> = {
   stock: '주식',
@@ -66,24 +54,59 @@ function HistoryTooltip({
   );
 }
 
-export default function HomeCharts({ data, hideAssets, onOpenAnalysis, onOpenAssets }: Props) {
-  const [allocationMode, setAllocationMode] = useState<AllocationMode>('asset');
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
-  const allocationSource: AllocationItem[] = allocationMode === 'asset'
-    ? data.asset_class_weights
-    : allocationMode === 'account'
-      ? data.account_weights
-      : data.region_weights;
-  const allocation = allocationSource
+function AllocationSummary({
+  title,
+  items,
+  translateName,
+}: {
+  title: string;
+  items: AllocationItem[];
+  translateName?: (name: string) => string;
+}) {
+  const sorted = items
     .filter((item) => item.value_krw > 0)
     .sort((a, b) => b.value_krw - a.value_krw);
-  const activeItem = allocation[activeIndex ?? 0];
+  const displayName = (name: string) => translateName?.(name) ?? name;
 
-  const displayName = (name: string) => allocationMode === 'asset'
-    ? (CLASS_NAMES[name] ?? name)
-    : name;
+  return (
+    <article className="rounded-2xl bg-toss-bg p-4" aria-label={title}>
+      <h3 className="text-[13px] font-bold text-toss-text-primary">{title}</h3>
+      {sorted.length > 0 ? (
+        <>
+          <div
+            className="mt-3 flex h-3 overflow-hidden rounded-full bg-toss-border"
+            role="img"
+            aria-label={sorted.map((item) => `${displayName(item.name)} ${item.weight.toFixed(1)}%`).join(', ')}
+          >
+            {sorted.map((item, index) => (
+              <span
+                key={item.name}
+                className="h-full min-w-[2px]"
+                style={{ width: `${item.weight}%`, backgroundColor: chartColor(index) }}
+                aria-hidden="true"
+              />
+            ))}
+          </div>
+          <ul className="mt-3 space-y-2.5">
+            {sorted.map((item, index) => (
+              <li key={item.name} className="flex min-w-0 items-center gap-1.5 text-[11px]">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: chartColor(index) }} />
+                <span className="min-w-0 leading-tight text-toss-text-secondary">{displayName(item.name)}</span>
+                <strong className="num ml-auto shrink-0 text-toss-text-primary">
+                  {item.weight.toFixed(1)}%
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="mt-3 text-xs text-toss-text-tertiary">비중 데이터가 아직 없어요</p>
+      )}
+    </article>
+  );
+}
 
+export default function HomeCharts({ data, hideAssets, onOpenAnalysis, onOpenAssets }: Props) {
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['history'],
     queryFn: () => fetchHistory(120),
@@ -109,90 +132,18 @@ export default function HomeCharts({ data, hideAssets, onOpenAnalysis, onOpenAss
         </button>
       </div>
 
-      <div className="grid gap-3 p-4 sm:grid-cols-2">
-        <div className="rounded-2xl bg-toss-bg p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-[13px] font-bold text-toss-text-primary">자산 배분</h3>
-            <div className="flex rounded-xl bg-toss-card p-1" role="tablist" aria-label="자산 배분 기준">
-              {ALLOCATION_MODES.map((mode) => (
-                <button
-                  key={mode.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={allocationMode === mode.key}
-                  onClick={() => {
-                    setAllocationMode(mode.key);
-                    setActiveIndex(null);
-                  }}
-                  className={`min-h-8 rounded-lg px-2 text-[10px] font-bold transition-colors ${
-                    allocationMode === mode.key
-                      ? 'bg-toss-blue text-white'
-                      : 'text-toss-text-tertiary hover:text-toss-text-primary'
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {allocation.length > 0 ? (
-            <>
-              <div className="relative mx-auto h-[150px] max-w-[210px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={allocation}
-                      dataKey="value_krw"
-                      innerRadius={45}
-                      outerRadius={67}
-                      paddingAngle={2.5}
-                      stroke="none"
-                      isAnimationActive={false}
-                      onMouseEnter={(_, index) => setActiveIndex(index)}
-                      onMouseLeave={() => setActiveIndex(null)}
-                    >
-                      {allocation.map((item, index) => (
-                        <Cell key={item.name} fill={chartColor(index)} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-[62px] text-center">
-                  <span className="whitespace-nowrap text-[10px] text-toss-text-tertiary">
-                    {activeIndex === null ? '가장 큰 비중' : '선택한 항목'}
-                  </span>
-                  <strong className="mt-0.5 max-w-full truncate text-[13px] text-toss-text-primary">
-                    {displayName(activeItem.name)}
-                  </strong>
-                  <span className="num text-[11px] font-semibold text-toss-blue">
-                    {activeItem.weight.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-
-              <ul className="grid grid-cols-2 gap-x-3 gap-y-2" aria-label="자산 배분 요약">
-                {allocation.slice(0, 6).map((item, index) => (
-                  <li key={item.name} className="flex min-w-0 items-center gap-1.5 text-[11px]">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: chartColor(index) }} />
-                    <span className="truncate text-toss-text-secondary">
-                      {displayName(item.name)}
-                    </span>
-                    <span className="num ml-auto shrink-0 font-semibold text-toss-text-primary">
-                      {item.weight.toFixed(0)}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <div className="flex h-[190px] items-center justify-center text-sm text-toss-text-tertiary">
-              배분 데이터가 아직 없어요
-            </div>
-          )}
+      <div className="p-4">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <AllocationSummary title="계좌 비중" items={data.account_weights} />
+          <AllocationSummary
+            title="자산군 비중"
+            items={data.asset_class_weights}
+            translateName={(name) => CLASS_NAMES[name] ?? name}
+          />
+          <AllocationSummary title="지역 비중" items={data.region_weights} />
         </div>
 
-        <div className="rounded-2xl bg-toss-bg p-4">
+        <div className="mt-3 rounded-2xl bg-toss-bg p-4">
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-[13px] font-bold text-toss-text-primary">자산 흐름</h3>
