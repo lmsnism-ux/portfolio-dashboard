@@ -59,14 +59,18 @@ export default function AddHoldingModal({ account, onClose }: Props) {
     };
   }, [onClose]);
 
-  // debounced search
+  // 검색 쿼리가 유효할 때만 결과 표시 (effect 내 동기 setState 회피)
+  const activeQ = mode === 'stock' ? searchQ.trim() : '';
+  const displayedResults = activeQ ? results : [];
+  // searching=true 이면 진행 중 → 결과없음 메시지 숨김 (setSearchDone(false) 동기 호출 제거)
+  const isSearchDone = Boolean(activeQ && !searching && searchDone);
+
+  // debounced search — 쿼리가 비거나 mode가 바뀌면 타이머만 정리, setState 없음
   useEffect(() => {
-    if (mode !== 'stock' || !searchQ.trim()) {
-      setResults([]);
-      setSearchDone(false);
+    if (!activeQ) {
+      if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
-    setSearchDone(false);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       setSearching(true);
@@ -76,7 +80,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
       setSearchDone(true);
     }, 300);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [searchQ, mode]);
+  }, [searchQ, mode, activeQ]);
 
   const selectResult = (r: TickerSearchResult) => {
     setName(r.name);
@@ -202,9 +206,9 @@ export default function AddHoldingModal({ account, onClose }: Props) {
               </label>
 
               {/* 검색 결과 */}
-              {results.length > 0 && (
+              {displayedResults.length > 0 && (
                 <div className="rounded-2xl border border-toss-border overflow-hidden divide-y divide-toss-border/60">
-                  {results.map((r) => (
+                  {displayedResults.map((r) => (
                     <button
                       key={r.symbol}
                       type="button"
@@ -225,7 +229,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
               )}
 
               {/* 결과 없음 */}
-              {searchDone && results.length === 0 && (
+              {isSearchDone && displayedResults.length === 0 && (
                 <p className="text-sm text-toss-text-tertiary text-center py-2">검색 결과가 없어요.</p>
               )}
 
