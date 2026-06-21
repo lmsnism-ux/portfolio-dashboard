@@ -13,6 +13,21 @@ interface CandidateRow {
   source: string;
 }
 
+interface OcrWord {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+interface OcrLine {
+  text: string;
+  words: OcrWord[];
+  top: number;
+  height: number;
+}
+
 function normalized(value: string): string {
   return value.toLocaleLowerCase('ko-KR').replace(/[^a-z0-9가-힣]/g, '');
 }
@@ -55,16 +70,119 @@ function closest(values: number[], target: number | null, excluded?: number): nu
   return [...pool].sort((a, b) => Math.abs(Math.log((a || 0.0001) / target)) - Math.abs(Math.log((b || 0.0001) / target)))[0];
 }
 
+function parseTsv(tsv: string | null | undefined): OcrLine[] {
+  if (!tsv) return [];
+  const groups = new Map<string, OcrWord[]>();
+  tsv.split(/\r?\n/).slice(1).forEach((row) => {
+    const columns = row.split('\t');
+    if (columns.length < 12 || columns[0] !== '5' || !columns[11]?.trim()) return;
+    const key = `${columns[1]}:${columns[2]}:${columns[3]}:${columns[4]}`;
+    const words = groups.get(key) ?? [];
+    words.push({
+      text: columns[11].trim(),
+      left: Number(columns[6]),
+      top: Number(columns[7]),
+      width: Number(columns[8]),
+      height: Number(columns[9]),
+    });
+    groups.set(key, words);
+  });
+  return [...groups.values()].map((words) => {
+    const sorted = words.sort((a, b) => a.left - b.left);
+    const top = Math.min(...sorted.map((word) => word.top));
+    const bottom = Math.max(...sorted.map((word) => word.top + word.height));
+    return { words: sorted, text: sorted.map((word) => word.text).join(' '), top, height: bottom - top };
+  });
+}
+
+function headerPosition(lines: OcrLine[], patterns: RegExp[]): number | null {
+  for (const line of lines) {
+    if (patterns.some((pattern) => pattern.test(normalized(line.text)))) {
+      const left = Math.min(...line.words.map((word) => word.left));
+      const right = Math.max(...line.words.map((word) => word.left + word.width));
+      return (left + right) / 2;
+    }
+    for (const word of line.words) {
+      const key = normalized(word.text);
+      if (patterns.some((pattern) => pattern.test(key))) return word.left + word.width / 2;
+    }
+  }
+  return null;
+}
+
+function numberWords(line: OcrLine, ticker: string | null): Array<{ value: number; x: number }> {
+  const result: Array<{ value: number; x: number }> = [];
+  line.words.forEach((word) => {
+    const values = numbersIn(word.text, ticker);
+    values.forEach((value) => result.push({ value, x: word.left + word.width / 2 }));
+  });
+  return result;
+}
+
+function numberWordsOnVisualRow(lines: OcrLine[], lineIndex: number, ticker: string | null): Array<{ value: number; x: number }> {
+  const target = lines[lineIndex];
+  if (!target) return [];
+  const centerY = target.top + target.height / 2;
+  const tolerance = Math.max(24, target.height * 1.25);
+  return lines.flatMap((line) => {
+    const lineCenter = line.top + line.height / 2;
+    return Math.abs(lineCenter - centerY) <= tolerance ? numberWords(line, ticker) : [];
+  });
+}
+
+function nearestColumn(values: Array<{ value: number; x: number }>, x: number | null): number | null {
+  if (x == null || !values.length) return null;
+  return [...values].sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0].value;
+}
+
+async function preprocessImage(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(2.5, Math.max(1, 2200 / bitmap.width));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) {
+    bitmap.close();
+    return file;
+  }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  let luminance = 0;
+  for (let index = 0; index < image.data.length; index += 4) {
+    luminance += image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114;
+  }
+  const invert = luminance / (image.data.length / 4) < 125;
+  for (let index = 0; index < image.data.length; index += 4) {
+    let gray = image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114;
+    if (invert) gray = 255 - gray;
+    gray = Math.max(0, Math.min(255, (gray - 128) * 1.45 + 128));
+    image.data[index] = gray;
+    image.data[index + 1] = gray;
+    image.data[index + 2] = gray;
+    image.data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  return await new Promise<Blob>((resolve) => canvas.toBlob((blob) => resolve(blob ?? file), 'image/png'));
+}
+
 // 임계값: 낮을수록 더 많이 매칭(OCR 노이즈 허용), 높을수록 정밀
 const MATCH_THRESHOLD = 0.4;
 // 매칭 줄 기준 전후 몇 줄에서 숫자를 추출할지
 const CONTEXT_BEFORE = 1;
 const CONTEXT_AFTER = 4;
 
-function extractCandidates(text: string, account: AccountData): CandidateRow[] {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+function extractCandidates(text: string, account: AccountData, tsv?: string | null): CandidateRow[] {
+  const positionedLines = parseTsv(tsv);
+  const lines = positionedLines.length
+    ? positionedLines.map((line) => line.text)
+    : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const keyedLines = lines.map((line) => normalized(line));
   const rows: CandidateRow[] = [];
+  const sharesX = headerPosition(positionedLines, [/보유수량/, /잔고수량/, /^수량$/]);
+  const avgPriceX = headerPosition(positionedLines, [/평균단가/, /매입단가/, /평단/, /^단가$/]);
+  const snapshotX = headerPosition(positionedLines, [/평가금액/, /평가액/, /잔액/]);
 
   account.holdings.forEach((holding) => {
     const nameKey = normalized(holding.name);
@@ -90,10 +208,13 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
     const source = lines.slice(from, to).join(' ');
     const values = numbersIn(source, holding.ticker);
     if (!values.length) return;
+    const rowNumbers = positionedLines[bestIndex]
+      ? numberWordsOnVisualRow(positionedLines, bestIndex, holding.ticker)
+      : [];
 
     if (holding.is_snapshot) {
       // 스냅샷 종목(예수금·수동입력 잔액): 숫자 1개를 총 평가금액으로 추출
-      const snapshotVal = closest(values, holding.value_krw);
+      const snapshotVal = nearestColumn(rowNumbers, snapshotX) ?? closest(values, holding.value_krw);
       rows.push({
         holding,
         selected: true,
@@ -103,8 +224,8 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
         source,
       });
     } else {
-      const shares = closest(values, holding.shares);
-      const avgPrice = closest(values, holding.avg_price, shares ?? undefined);
+      const shares = nearestColumn(rowNumbers, sharesX) ?? closest(values, holding.shares);
+      const avgPrice = nearestColumn(rowNumbers, avgPriceX) ?? closest(values, holding.avg_price, shares ?? undefined);
       rows.push({
         holding,
         selected: true,
@@ -157,21 +278,30 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
 
     let worker: Awaited<ReturnType<(typeof import('tesseract.js'))['createWorker']>> | null = null;
     try {
-      const { createWorker } = await import('tesseract.js');
+      const { createWorker, PSM } = await import('tesseract.js');
       worker = await createWorker('kor+eng', 1, {
         logger: (message) => {
           if (message.status === 'recognizing text') setProgress(Math.round((message.progress ?? 0) * 100));
         },
       });
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, preserve_interword_spaces: '1' });
       // 여러 장을 순차 인식해 후보를 누적·병합(같은 종목은 수량이 채워진 쪽 우선).
       const merged = new Map<string, CandidateRow>();
       const allTexts: string[] = [];
       for (let i = 0; i < valid.length; i += 1) {
         if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
         setProgress(0);
-        const result = await worker.recognize(valid[i]);
+        const processed = await preprocessImage(valid[i]);
+        let result = await worker.recognize(processed, {}, { text: true, tsv: true });
+        let candidates = extractCandidates(result.data.text, account, result.data.tsv);
+        // 전처리 이미지에서 종목을 못 찾으면 원본도 다시 읽는다.
+        if (!candidates.length) {
+          const original = await worker.recognize(valid[i], {}, { text: true, tsv: true });
+          result = original;
+          candidates = extractCandidates(original.data.text, account, original.data.tsv);
+        }
         allTexts.push(result.data.text);
-        for (const candidate of extractCandidates(result.data.text, account)) {
+        for (const candidate of candidates) {
           const key = candidate.holding.ticker || candidate.holding.name;
           const existing = merged.get(key);
           if (!existing || (!existing.shares && candidate.shares)) merged.set(key, candidate);

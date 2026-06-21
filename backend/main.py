@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 import csv
 import io
+import json
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -782,6 +784,8 @@ def _fetch_yahoo_chart(symbol: str, range: str = "30d", interval: str = "1d") ->
 _KR_SUFFIXES = (".KS", ".KQ")
 _US_EXCHANGES = {"NYQ", "NMS", "NGM", "PCX", "ASE", "BTS", "NCM", "CCS", "ARC", "NIM"}
 _SKIP_TYPES   = {"MUTUALFUND", "FUTURE", "OPTION", "INDEX", "CURRENCY", "CRYPTOCURRENCY"}
+_kr_etf_cache: list[dict] = []
+_kr_etf_cache_ts: float = 0.0
 
 # 한국어 → Yahoo Finance 검색어 변환표 (지수명·브랜드명·테마명)
 # 주의: Yahoo Finance는 단순 지수명(예: "nasdaq")을 검색하면 INDEX 타입을 반환해 필터됨.
@@ -838,16 +842,84 @@ def _translate_kr_query(q: str) -> str:
     return q
 
 
+def _normalized_search(value: str) -> str:
+    return "".join(value.lower().split())
+
+
+def _kr_etf_search_terms(q: str) -> list[str]:
+    """짧은 한글 입력과 ETF 브랜드 별칭을 실제 한글 종목명 검색어로 바꾼다."""
+    raw = _normalized_search(q)
+    if not raw:
+        return []
+    aliases = {
+        "타이거": "tiger", "코덱스": "kodex", "코덱": "kodex",
+        "에이스": "ace", "솔": "sol", "라이즈": "rise",
+    }
+    terms = [english for korean, english in aliases.items() if korean in raw]
+    themes = ("나스닥", "코스피", "코스닥", "반도체", "배당", "인버스", "레버리지")
+    terms.extend(theme for theme in themes if theme in raw)
+    if terms:
+        return list(dict.fromkeys(terms))
+    # 한 글자만 입력해도 사용자가 의도한 대표 테마를 자동완성한다.
+    for theme in themes:
+        if theme.startswith(raw):
+            return [theme]
+    return [raw]
+
+
+def _filter_kr_etfs(items: list[dict], q: str) -> list[dict]:
+    terms = _kr_etf_search_terms(q)
+    if not terms:
+        return []
+    results = []
+    for item in items:
+        name = str(item.get("itemname") or "").strip()
+        ticker = str(item.get("itemcode") or "").strip()
+        searchable = _normalized_search(f"{name} {ticker}")
+        if all(term in searchable for term in terms):
+            results.append({
+                "name": name,
+                "ticker": ticker,
+                "symbol": f"{ticker}.KS",
+                "type": "ETF",
+                "market": "KR",
+            })
+    return results
+
+
+async def _get_kr_etfs() -> list[dict]:
+    """네이버 금융 ETF 전종목을 1시간 캐시한다. 응답 본문은 EUC-KR이다."""
+    global _kr_etf_cache, _kr_etf_cache_ts
+    if _kr_etf_cache and time.time() - _kr_etf_cache_ts < 3600:
+        return _kr_etf_cache
+    url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url, headers=headers)
+    response.raise_for_status()
+    payload = json.loads(response.content.decode("euc-kr"))
+    _kr_etf_cache = payload.get("result", {}).get("etfItemList", [])
+    _kr_etf_cache_ts = time.time()
+    return _kr_etf_cache
+
+
 @app.get("/api/market/search")
 async def search_tickers(q: str = ""):
     """Yahoo Finance 종목 검색. KR(KRX 6자리)·US 심볼만 반환."""
     q = q.strip()
     if not q:
         return {"items": []}
-    # 한국어 포함 시 영어 브랜드명으로 변환
-    q = _translate_kr_query(q)
+    # 국내 ETF는 한글 전종목 목록에서 먼저 검색한다.
+    try:
+        kr_items = _filter_kr_etfs(await _get_kr_etfs(), q)
+    except Exception as exc:
+        logger.warning(f"국내 ETF 목록 조회 실패: {exc}")
+        kr_items = []
+
+    # 미국 종목과 국내 개별 주식 보조 검색은 Yahoo를 유지한다.
+    yahoo_q = _translate_kr_query(q)
     url = "https://query2.finance.yahoo.com/v1/finance/search"
-    params = {"q": q, "quotesCount": 15, "newsCount": 0,
+    params = {"q": yahoo_q, "quotesCount": 15, "newsCount": 0,
               "enableFuzzyQuery": "false", "sectionList": "Quotes"}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
     try:
@@ -856,8 +928,8 @@ async def search_tickers(q: str = ""):
         if not resp.is_success:
             return {"items": [], "debug": f"yahoo_status={resp.status_code}"}
         quotes = resp.json().get("quotes", [])
-        items: list[dict] = []
-        seen: set[str] = set()
+        items: list[dict] = list(kr_items)
+        seen: set[str] = {item["symbol"] for item in kr_items}
         for quote in quotes:
             symbol: str = quote.get("symbol", "")
             if not symbol or symbol in seen:
@@ -885,7 +957,7 @@ async def search_tickers(q: str = ""):
                           "symbol": symbol, "type": qtype, "market": market})
         return {"items": items}
     except Exception as exc:
-        return {"items": [], "debug": f"exception={type(exc).__name__}: {exc}"}
+        return {"items": kr_items, "debug": f"yahoo_exception={type(exc).__name__}: {exc}"}
 
 
 @app.get("/api/market/sparkline")
