@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Receipt, Trash2 } from 'lucide-react';
 import type { AccountData, HoldingData } from '../types';
-import { deleteHolding, patchHolding } from '../api';
+import { deleteHolding, isAuthError, patchHolding } from '../api';
 import TradeModal from './TradeModal';
+import ApiKeyModal from './modals/ApiKeyModal';
 
 interface Props {
   account: AccountData;
@@ -16,6 +17,7 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
   const isUsd = holding.currency === 'USD';
   const [tradeOpen, setTradeOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const [shares, setShares] = useState<string>(holding.shares?.toString() ?? '');
@@ -218,9 +220,33 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
           </div>
 
           {mutation.isError && (
-            <p role="alert" className="text-sm text-toss-danger">저장 실패: 편집 권한을 연결한 뒤 다시 시도해주세요.</p>
+            <div role="alert" className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-toss-danger space-y-2">
+              <p>{isAuthError(mutation.error) ? '편집 권한이 필요해요.' : '저장하지 못했어요.'}</p>
+              {isAuthError(mutation.error) && (
+                <button
+                  type="button"
+                  onClick={() => setApiKeyOpen(true)}
+                  className="text-toss-blue font-semibold underline-offset-2 underline text-xs"
+                >
+                  편집 권한 연결하기 →
+                </button>
+              )}
+            </div>
           )}
-          {deleteMutation.isError && <p role="alert" className="text-sm text-toss-danger">삭제 실패: 편집 권한을 연결한 뒤 다시 시도해주세요.</p>}
+          {deleteMutation.isError && (
+            <div role="alert" className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-toss-danger space-y-2">
+              <p>{isAuthError(deleteMutation.error) ? '편집 권한이 필요해요.' : '삭제하지 못했어요.'}</p>
+              {isAuthError(deleteMutation.error) && (
+                <button
+                  type="button"
+                  onClick={() => setApiKeyOpen(true)}
+                  className="text-toss-blue font-semibold underline-offset-2 underline text-xs"
+                >
+                  편집 권한 연결하기 →
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="border-t border-toss-border pt-4">
             {confirmDelete ? (
@@ -264,6 +290,9 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
             onClose();
           }}
         />
+      )}
+      {apiKeyOpen && (
+        <ApiKeyModal onClose={() => { setApiKeyOpen(false); mutation.reset(); }} />
       )}
     </div>
   );

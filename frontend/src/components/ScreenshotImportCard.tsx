@@ -9,6 +9,7 @@ interface CandidateRow {
   selected: boolean;
   shares: string;
   avgPrice: string;
+  snapshotVal: string;
   source: string;
 }
 
@@ -61,7 +62,7 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
   const keyedLines = lines.map((line) => normalized(line));
   const rows: CandidateRow[] = [];
 
-  account.holdings.filter((holding) => !holding.is_snapshot).forEach((holding) => {
+  account.holdings.forEach((holding) => {
     const nameKey = normalized(holding.name);
     const tickerKey = normalized(holding.ticker ?? '');
 
@@ -82,15 +83,30 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
     const source = lines.slice(bestIndex, bestIndex + 3).join(' ');
     const values = numbersIn(source, holding.ticker);
     if (!values.length) return;
-    const shares = closest(values, holding.shares);
-    const avgPrice = closest(values, holding.avg_price, shares ?? undefined);
-    rows.push({
-      holding,
-      selected: true,
-      shares: shares == null ? '' : String(shares),
-      avgPrice: avgPrice == null ? '' : String(avgPrice),
-      source,
-    });
+
+    if (holding.is_snapshot) {
+      // 스냅샷 종목(예수금·수동입력 잔액): 숫자 1개를 총 평가금액으로 추출
+      const snapshotVal = closest(values, holding.value_krw);
+      rows.push({
+        holding,
+        selected: true,
+        shares: '',
+        avgPrice: '',
+        snapshotVal: snapshotVal == null ? '' : String(snapshotVal),
+        source,
+      });
+    } else {
+      const shares = closest(values, holding.shares);
+      const avgPrice = closest(values, holding.avg_price, shares ?? undefined);
+      rows.push({
+        holding,
+        selected: true,
+        shares: shares == null ? '' : String(shares),
+        avgPrice: avgPrice == null ? '' : String(avgPrice),
+        snapshotVal: '',
+        source,
+      });
+    }
   });
 
   return rows;
@@ -174,9 +190,12 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       setStatus('반영할 종목을 하나 이상 선택해주세요.');
       return;
     }
-    const invalid = selected.some((row) => !Number.isFinite(Number(row.shares)) || Number(row.shares) < 0);
+    const invalid = selected.some((row) => {
+      if (row.holding.is_snapshot) return !Number.isFinite(Number(row.snapshotVal)) || Number(row.snapshotVal) < 0;
+      return !Number.isFinite(Number(row.shares)) || Number(row.shares) < 0;
+    });
     if (invalid) {
-      setStatus('보유 수량을 숫자로 확인해주세요.');
+      setStatus('수량 또는 잔액을 숫자로 확인해주세요.');
       return;
     }
 
@@ -184,6 +203,18 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
     setStatus('확인한 숫자를 자산에 반영하는 중이에요.');
     try {
       await patchHoldingsBulk(selected.map((row) => {
+        if (row.holding.is_snapshot) {
+          const val = Number(row.snapshotVal);
+          return {
+            account_name: account.name,
+            holding_key: row.holding.ticker || row.holding.name,
+            ...(Number.isFinite(val) && val >= 0
+              ? row.holding.currency === 'USD'
+                ? { snapshot_value_usd: val }
+                : { snapshot_value_krw: val }
+              : {}),
+          };
+        }
         const avgPrice = Number(row.avgPrice);
         return {
           account_name: account.name,
@@ -260,8 +291,17 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
                   {row.holding.name}
                 </label>
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <label className="text-[11px] text-toss-text-tertiary">보유 수량<input inputMode="decimal" value={row.shares} onChange={(event) => updateRow(index, { shares: event.target.value })} className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" /></label>
-                  <label className="text-[11px] text-toss-text-tertiary">평균 매수가<input inputMode="decimal" value={row.avgPrice} onChange={(event) => updateRow(index, { avgPrice: event.target.value })} className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" /></label>
+                  {row.holding.is_snapshot ? (
+                    <label className="col-span-2 text-[11px] text-toss-text-tertiary">
+                      잔액 ({row.holding.currency === 'USD' ? 'USD' : 'KRW'})
+                      <input inputMode="decimal" value={row.snapshotVal} onChange={(event) => updateRow(index, { snapshotVal: event.target.value })} className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                    </label>
+                  ) : (
+                    <>
+                      <label className="text-[11px] text-toss-text-tertiary">보유 수량<input inputMode="decimal" value={row.shares} onChange={(event) => updateRow(index, { shares: event.target.value })} className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" /></label>
+                      <label className="text-[11px] text-toss-text-tertiary">평균 매수가<input inputMode="decimal" value={row.avgPrice} onChange={(event) => updateRow(index, { avgPrice: event.target.value })} className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" /></label>
+                    </>
+                  )}
                 </div>
                 <p className="mt-2 truncate text-[10px] text-toss-text-tertiary" title={row.source}>인식한 행: {row.source}</p>
               </div>
