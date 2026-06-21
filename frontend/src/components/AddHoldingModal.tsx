@@ -219,7 +219,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
                         {r.market}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-toss-text-primary leading-tight truncate">{r.name}</p>
+                        <p className="text-sm font-semibold text-toss-text-primary leading-tight line-clamp-2">{r.name}</p>
                         <p className="text-[11px] text-toss-text-tertiary mt-0.5">{r.ticker} · {r.type === 'ETF' ? 'ETF' : '주식'}</p>
                       </div>
                       <ChevronRight size={15} className="text-toss-text-tertiary shrink-0" />

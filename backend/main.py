@@ -868,7 +868,10 @@ async def search_tickers(q: str = ""):
                 ticker = symbol
             else:
                 continue
-            name = (quote.get("longname") or quote.get("shortname") or symbol).strip()
+            if market == "KR":
+                name = (quote.get("shortname") or quote.get("longname") or symbol).strip()
+            else:
+                name = (quote.get("longname") or quote.get("shortname") or symbol).strip()
             seen.add(symbol)
             items.append({"name": name, "ticker": ticker,
                           "symbol": symbol, "type": qtype, "market": market})
