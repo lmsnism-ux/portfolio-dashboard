@@ -55,7 +55,11 @@ function closest(values: number[], target: number | null, excluded?: number): nu
   return [...pool].sort((a, b) => Math.abs(Math.log((a || 0.0001) / target)) - Math.abs(Math.log((b || 0.0001) / target)))[0];
 }
 
-const MATCH_THRESHOLD = 0.6;
+// 임계값: 낮을수록 더 많이 매칭(OCR 노이즈 허용), 높을수록 정밀
+const MATCH_THRESHOLD = 0.4;
+// 매칭 줄 기준 전후 몇 줄에서 숫자를 추출할지
+const CONTEXT_BEFORE = 1;
+const CONTEXT_AFTER = 4;
 
 function extractCandidates(text: string, account: AccountData): CandidateRow[] {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -80,7 +84,10 @@ function extractCandidates(text: string, account: AccountData): CandidateRow[] {
     });
     if (bestIndex < 0 || bestScore < MATCH_THRESHOLD) return;
 
-    const source = lines.slice(bestIndex, bestIndex + 3).join(' ');
+    // 매칭 줄 전후 컨텍스트를 넓게 스캔해 숫자를 추출한다.
+    const from = Math.max(0, bestIndex - CONTEXT_BEFORE);
+    const to = Math.min(lines.length, bestIndex + CONTEXT_AFTER + 1);
+    const source = lines.slice(from, to).join(' ');
     const values = numbersIn(source, holding.ticker);
     if (!values.length) return;
 
@@ -231,7 +238,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       setStatus(`${selected.length}개 종목을 반영했어요.`);
       setRows([]);
     } catch {
-      setStatus(‘반영하지 못했어요. 잠시 후 다시 시도해주세요.’);
+      setStatus('반영하지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setSaving(false);
     }

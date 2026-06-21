@@ -783,6 +783,35 @@ _KR_SUFFIXES = (".KS", ".KQ")
 _US_EXCHANGES = {"NYQ", "NMS", "NGM", "PCX", "ASE", "BTS", "NCM", "CCS", "ARC", "NIM"}
 _SKIP_TYPES   = {"MUTUALFUND", "FUTURE", "OPTION", "INDEX", "CURRENCY", "CRYPTOCURRENCY"}
 
+# 한국어 브랜드명 → Yahoo Finance 검색어 변환표
+_KR_BRAND_MAP: dict[str, str] = {
+    "코스피": "kospi", "코스닥": "kosdaq",
+    "코덱스": "kodex", "코덱": "kodex",
+    "타이거": "tiger",
+    "케이비스타": "kbstar", "케이비": "kbstar",
+    "에이스": "ace etf", "에이스etf": "ace etf",
+    "아리랑": "arirang",
+    "키움": "kium",
+    "솔": "shinhan sol", "신한솔": "shinhan sol",
+    "미래에셋": "mirae asset tiger",
+    "삼성": "samsung kodex",
+    "한국투자": "ace etf",
+    "마이티": "mighty",
+    "파워": "power etf",
+    "흥국": "heungkuk",
+}
+
+
+def _translate_kr_query(q: str) -> str:
+    """한국어가 포함된 검색어를 영어 대응어로 변환. 못 찾으면 원본 반환."""
+    lower = q.lower().replace(" ", "")
+    for kr, en in _KR_BRAND_MAP.items():
+        if kr in lower:
+            # 나머지 토큰(숫자 등) 보존
+            rest = q.replace(kr, "").strip()
+            return (en + " " + rest).strip() if rest else en
+    return q
+
 
 @app.get("/api/market/search")
 async def search_tickers(q: str = ""):
@@ -790,6 +819,8 @@ async def search_tickers(q: str = ""):
     q = q.strip()
     if not q:
         return {"items": []}
+    # 한국어 포함 시 영어 브랜드명으로 변환
+    q = _translate_kr_query(q)
     url = "https://query2.finance.yahoo.com/v1/finance/search"
     params = {"q": q, "quotesCount": 15, "newsCount": 0,
               "enableFuzzyQuery": "false", "sectionList": "Quotes"}
