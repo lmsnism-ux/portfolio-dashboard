@@ -290,6 +290,7 @@ button {
   justify-content: center;
   border-radius: 14px;
   color: var(--color-toss-text-secondary);
+  cursor: pointer;
 }
 .icon-button:hover { background: var(--color-toss-bg); color: var(--color-toss-text-primary); }
 .hero-action { background: color-mix(in srgb, var(--color-toss-bg) 70%, transparent); }

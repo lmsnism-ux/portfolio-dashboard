@@ -73,7 +73,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                   <strong className="num block text-[15px] text-toss-text-primary">{hideAssets ? '••••••' : fmtKRW(account.value_krw)}</strong>
                   <small className={`num mt-1 block text-[13px] ${colorClass(account.day_change_krw)}`}>오늘 {account.day_change_krw >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(account.day_change_krw)}</small>
                 </div>
-                <button onClick={() => onAdd(account)} aria-label={`${account.name}에 종목 추가`} className="icon-button"><Plus size={18} /></button>
+                <button type="button" onClick={() => onAdd(account)} aria-label={`${account.name}에 종목 추가`} className="icon-button"><Plus size={18} /></button>
               </div>
             </header>
 

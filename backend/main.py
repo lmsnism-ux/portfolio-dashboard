@@ -787,13 +787,7 @@ _SKIP_TYPES   = {"MUTUALFUND", "FUTURE", "OPTION", "INDEX", "CURRENCY", "CRYPTOC
 # 주의: Yahoo Finance는 단순 지수명(예: "nasdaq")을 검색하면 INDEX 타입을 반환해 필터됨.
 #       ETF가 나오게 하려면 브랜드명(tiger/kodex)이나 "etf" 접미어가 필요함.
 _KR_BRAND_MAP: dict[str, str] = {
-    # 지수 → 브랜드 접두어 붙여 ETF 결과 유도
-    "나스닥": "tiger nasdaq", "나스닥100": "tiger nasdaq",
-    "에스앤피": "tiger s&p", "s&p": "tiger s&p",
-    "코스피": "kodex kospi", "코스닥": "kodex kosdaq",
-    "다우": "tiger dow jones",
-    "미국": "tiger us",
-    # ETF 운용사·브랜드 (브랜드명으로 직접 검색 가능)
+    # ETF 브랜드 (접두어 매칭 우선순위 — 브랜드명을 지수명보다 앞에 배치)
     "코덱스": "kodex", "코덱": "kodex",
     "타이거": "tiger",
     "케이비스타": "kbstar", "케이비스": "kbstar",
@@ -807,6 +801,12 @@ _KR_BRAND_MAP: dict[str, str] = {
     "파워": "power etf",
     "흥국": "heungkuk",
     "하나로": "hanaro",
+    # 지수 → 브랜드 접두어 붙여 ETF 결과 유도
+    "나스닥": "tiger nasdaq", "나스닥100": "tiger nasdaq",
+    "에스앤피": "tiger s&p", "s&p": "tiger s&p",
+    "코스피": "kodex kospi", "코스닥": "kodex kosdaq",
+    "다우": "tiger dow jones",
+    "미국": "tiger us",
     # 테마·섹터
     "반도체": "semiconductor etf",
     "2차전지": "battery etf", "이차전지": "battery etf",
@@ -820,13 +820,21 @@ _KR_BRAND_MAP: dict[str, str] = {
 
 
 def _translate_kr_query(q: str) -> str:
-    """한국어가 포함된 검색어를 영어 대응어로 변환. 못 찾으면 원본 반환."""
+    """한국어가 포함된 검색어를 영어 대응어로 변환. 못 찾으면 원본 반환.
+    정확 매칭 우선, 실패 시 키 접두어 매칭("나" → "나스닥" → tiger nasdaq).
+    """
     lower = q.lower().replace(" ", "")
+    if not lower:
+        return q
+    # 1) 정확 매칭: 사용자 입력이 키를 포함하거나 키가 사용자 입력을 포함
     for kr, en in _KR_BRAND_MAP.items():
         if kr in lower:
-            # 나머지 토큰(숫자 등) 보존
             rest = q.replace(kr, "").strip()
             return (en + " " + rest).strip() if rest else en
+    # 2) 접두어 매칭: "나" → "나스닥" 처럼 키가 입력의 접두어로 시작하는 경우
+    for kr, en in _KR_BRAND_MAP.items():
+        if kr.startswith(lower):
+            return en
     return q
 
 
