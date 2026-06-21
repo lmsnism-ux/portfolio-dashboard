@@ -178,7 +178,9 @@ async def export_csv():
     """보유 종목 + 거래내역 CSV 다운로드."""
     portfolio = load_portfolio()
     cache = get_cached_prices()
-    summary = build_portfolio_summary(portfolio, cache)
+    prices = cache.get("prices", {})
+    usd_krw = cache.get("usd_krw") or 1400
+    summary = build_portfolio_summary(portfolio, prices, usd_krw, cache.get("usd_krw_prev"))
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -796,7 +798,7 @@ async def search_tickers(q: str = ""):
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, params=params, headers=headers)
         if not resp.is_success:
-            return {"items": []}
+            return {"items": [], "debug": f"yahoo_status={resp.status_code}"}
         quotes = resp.json().get("quotes", [])
         items: list[dict] = []
         seen: set[str] = set()
@@ -823,8 +825,8 @@ async def search_tickers(q: str = ""):
             items.append({"name": name, "ticker": ticker,
                           "symbol": symbol, "type": qtype, "market": market})
         return {"items": items}
-    except Exception:
-        return {"items": []}
+    except Exception as exc:
+        return {"items": [], "debug": f"exception={type(exc).__name__}: {exc}"}
 
 
 @app.get("/api/market/sparkline")

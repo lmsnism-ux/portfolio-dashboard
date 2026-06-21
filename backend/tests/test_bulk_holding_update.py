@@ -16,7 +16,6 @@ class BulkHoldingUpdateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["PORTFOLIO_DATA_DIR"] = self.tmp.name
-        os.environ["PORTFOLIO_API_KEY"] = "test-key"
         self.path = Path(self.tmp.name) / "portfolio.json"
         self.path.write_text(json.dumps({
             "accounts": [{
@@ -32,19 +31,16 @@ class BulkHoldingUpdateTest(unittest.TestCase):
         main = importlib.import_module("main")
         from fastapi.testclient import TestClient
         self.client = TestClient(main.app)
-        token = self.client.post("/api/auth/session", json={"api_key": "test-key"}).json()["token"]
-        self.headers = {"Authorization": f"Bearer {token}"}
 
     def tearDown(self) -> None:
         os.environ.pop("PORTFOLIO_DATA_DIR", None)
-        os.environ.pop("PORTFOLIO_API_KEY", None)
         self.tmp.cleanup()
 
     def _holding(self) -> dict:
         return json.loads(self.path.read_text(encoding="utf-8"))["accounts"][0]["holdings"][0]
 
     def test_updates_reviewed_values_at_once(self) -> None:
-        response = self.client.patch("/api/portfolio/holdings/bulk", headers=self.headers, json={"updates": [{
+        response = self.client.patch("/api/portfolio/holdings/bulk", json={"updates": [{
             "account_name": "테스트 계좌",
             "holding_key": "TEST",
             "shares": 3.5,
@@ -56,7 +52,7 @@ class BulkHoldingUpdateTest(unittest.TestCase):
         self.assertEqual(self._holding()["avg_price_krw"], 1200)
 
     def test_invalid_batch_does_not_partially_save(self) -> None:
-        response = self.client.patch("/api/portfolio/holdings/bulk", headers=self.headers, json={"updates": [
+        response = self.client.patch("/api/portfolio/holdings/bulk", json={"updates": [
             {"account_name": "테스트 계좌", "holding_key": "TEST", "shares": 9},
             {"account_name": "테스트 계좌", "holding_key": "MISSING", "shares": 2},
         ]})

@@ -231,7 +231,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       setStatus(`${selected.length}개 종목을 반영했어요.`);
       setRows([]);
     } catch {
-      setStatus('반영하지 못했어요. 위의 ‘편집 권한 연결’을 먼저 눌러주세요.');
+      setStatus(‘반영하지 못했어요. 잠시 후 다시 시도해주세요.’);
     } finally {
       setSaving(false);
     }
