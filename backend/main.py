@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Optional
 import csv
 import io
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -774,6 +775,56 @@ def _fetch_yahoo_chart(symbol: str, range: str = "30d", interval: str = "1d") ->
     except Exception as e:
         logger.warning(f"yahoo chart fetch 실패 ({symbol}): {e}")
         return None
+
+
+_KR_SUFFIXES = (".KS", ".KQ")
+_US_EXCHANGES = {"NYQ", "NMS", "NGM", "PCX", "ASE", "BTS", "NCM", "CCS", "ARC", "NIM"}
+_SKIP_TYPES   = {"MUTUALFUND", "FUTURE", "OPTION", "INDEX", "CURRENCY", "CRYPTOCURRENCY"}
+
+
+@app.get("/api/market/search")
+async def search_tickers(q: str = ""):
+    """Yahoo Finance 종목 검색. KR(KRX 6자리)·US 심볼만 반환."""
+    q = q.strip()
+    if not q:
+        return {"items": []}
+    url = "https://query2.finance.yahoo.com/v1/finance/search"
+    params = {"q": q, "quotesCount": 15, "newsCount": 0,
+              "enableFuzzyQuery": "false", "sectionList": "Quotes"}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url, params=params, headers=headers)
+        if not resp.is_success:
+            return {"items": []}
+        quotes = resp.json().get("quotes", [])
+        items: list[dict] = []
+        seen: set[str] = set()
+        for quote in quotes:
+            symbol: str = quote.get("symbol", "")
+            if not symbol or symbol in seen:
+                continue
+            qtype = quote.get("quoteType", "")
+            if qtype in _SKIP_TYPES:
+                continue
+            exchange = quote.get("exchange", "")
+            if any(symbol.endswith(s) for s in _KR_SUFFIXES):
+                market = "KR"
+                ticker = symbol.rsplit(".", 1)[0]
+                if not ticker.isdigit() or len(ticker) != 6:
+                    continue
+            elif exchange in _US_EXCHANGES:
+                market = "US"
+                ticker = symbol
+            else:
+                continue
+            name = (quote.get("longname") or quote.get("shortname") or symbol).strip()
+            seen.add(symbol)
+            items.append({"name": name, "ticker": ticker,
+                          "symbol": symbol, "type": qtype, "market": market})
+        return {"items": items}
+    except Exception:
+        return {"items": []}
 
 
 @app.get("/api/market/sparkline")

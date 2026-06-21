@@ -245,6 +245,26 @@ export interface TickerHistory {
   items: TickerHistoryPoint[];
 }
 
+export interface TickerSearchResult {
+  name: string;
+  ticker: string;
+  symbol: string;
+  type: string;
+  market: 'KR' | 'US';
+}
+
+export async function searchTickers(q: string): Promise<TickerSearchResult[]> {
+  if (!q.trim()) return [];
+  try {
+    const res = await readFetch(`${BASE}/market/search?q=${encodeURIComponent(q.trim())}`);
+    if (!res.ok) return [];
+    const data = await res.json() as { items: TickerSearchResult[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchTickerHistory(ticker: string, range = '1mo'): Promise<TickerHistory> {
   const res = await fetch(`${BASE}/market/history/${encodeURIComponent(ticker)}?range=${range}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
