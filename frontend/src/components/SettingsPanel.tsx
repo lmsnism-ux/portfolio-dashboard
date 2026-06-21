@@ -1,21 +1,17 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   Bell,
   Building2,
   Download,
   Eye,
   EyeOff,
-  KeyRound,
   Landmark,
   Moon,
   ShieldCheck,
-  LogOut,
   Sun,
   WalletCards,
 } from 'lucide-react';
-import { deleteSession, downloadCsv } from '../api';
-import ApiKeyModal from './modals/ApiKeyModal';
+import { downloadCsv } from '../api';
 import NotifModal from './modals/NotifModal';
 
 interface Props {
@@ -74,17 +70,10 @@ export default function SettingsPanel({
   onToggleRealEstate,
   onToggleLoan,
 }: Props) {
-  const queryClient = useQueryClient();
-  const [apiKeyOpen, setApiKeyOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [downloadError, setDownloadError] = useState('');
 
-  const closeApiKey = () => {
-    setApiKeyOpen(false);
-    queryClient.invalidateQueries({ queryKey: ['portfolio'] });
-  };
-
-  return (
+return (
     <>
       <section className="bg-toss-card rounded-[var(--radius-toss-lg)] shadow-[var(--shadow-toss-card)] overflow-hidden">
         <div className="px-5 pt-5 pb-3">
@@ -135,16 +124,6 @@ export default function SettingsPanel({
         </div>
         <div className="divide-y divide-toss-border/70">
           <button
-            onClick={() => setApiKeyOpen(true)}
-            className="settings-action"
-          >
-            <KeyRound size={19} />
-            <span>
-              <strong>편집 권한 연결</strong>
-              <small>추가·수정·삭제가 필요할 때만 연결해요.</small>
-            </span>
-          </button>
-          <button
             onClick={() => setNotifOpen(true)}
             className="settings-action"
           >
@@ -152,16 +131,6 @@ export default function SettingsPanel({
             <span>
               <strong>알림 설정</strong>
               <small>자동매수 일정과 가격 변동 알림을 관리해요.</small>
-            </span>
-          </button>
-          <button
-            onClick={() => { void deleteSession(); }}
-            className="settings-action"
-          >
-            <LogOut size={19} />
-            <span>
-              <strong>로그아웃</strong>
-              <small>현재 탭의 개인 자산 세션을 종료해요.</small>
             </span>
           </button>
           <button
@@ -193,7 +162,6 @@ export default function SettingsPanel({
         </div>
       </section>
 
-      {apiKeyOpen && <ApiKeyModal onClose={closeApiKey} />}
       {notifOpen && <NotifModal onClose={() => setNotifOpen(false)} />}
     </>
   );

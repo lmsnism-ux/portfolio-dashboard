@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
-import { fetchPortfolio, isAuthError, readCachedPortfolio, triggerRefresh } from './api';
+import { fetchPortfolio, readCachedPortfolio, triggerRefresh } from './api';
 import Header from './components/Header';
 import BottomNav, { type TabKey } from './components/BottomNav';
 import AutoBuyCard from './components/AutoBuyCard';
@@ -10,7 +10,6 @@ import CashCard from './components/CashCard';
 import HoldingsList from './components/HoldingsList';
 import HomeOverview from './components/HomeOverview';
 import SettingsPanel from './components/SettingsPanel';
-import ApiKeyModal from './components/modals/ApiKeyModal';
 import { DashboardSkeleton } from './components/Skeletons';
 import ErrorBoundary from './components/ErrorBoundary';
 import { isLongTermAccount, fmtKRW, fmtPct, colorClass, applyDisplayToggles } from './utils';
@@ -54,7 +53,6 @@ export default function App() {
   );
   const [adding, setAdding] = useState<AccountData | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [trading, setTrading] = useState<{ account: AccountData; holding: HoldingData; side?: 'buy' | 'sell' } | null>(null);
   const [realEstateOn, setRealEstateOn] = useState(() => localStorage.getItem(RE_KEY) !== '0');
   const [loanOn, setLoanOn] = useState(() => localStorage.getItem(LOAN_KEY) !== '0');
@@ -100,7 +98,7 @@ export default function App() {
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['portfolio'],
     queryFn: fetchPortfolio,
     // 콜드스타트 동안 직전 스냅샷을 즉시 표시(빈 화면 제거) → 0으로 stale 처리해 곧바로 백그라운드 갱신
@@ -109,7 +107,7 @@ export default function App() {
     refetchInterval: 7 * 60 * 1000,
     staleTime: 5 * 60 * 1000,
     // Render 무료 서버가 절전에서 깨어나는 데 30~60초 걸릴 수 있어 넉넉히 재시도
-    retry: (failureCount, queryError) => !isAuthError(queryError) && failureCount < 6,
+    retry: (failureCount) => failureCount < 6,
     retryDelay: (i) => Math.min(1000 * 2 ** i, 8000),
   });
 
@@ -126,38 +124,25 @@ export default function App() {
 
   if (isLoading) return <DashboardSkeleton />;
 
-  // 캐시(initialData)가 있으면 data가 유지되므로, 데이터가 아예 없을 때만 오류/인증 화면을 보여준다.
+  // 캐시(initialData)가 있으면 data가 유지되므로, 데이터가 아예 없을 때만 오류 화면을 보여준다.
   if (!data) {
-    const authRequired = isAuthError(error);
     return (
       <div className="min-h-[100dvh] bg-toss-bg flex items-center justify-center px-6">
         <div className="text-center max-w-xs">
           <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-toss-blue-soft flex items-center justify-center">
             <KeyRound size={22} className="text-toss-blue" />
           </div>
-          <p className="text-lg font-bold text-toss-text-primary mb-2">
-            {authRequired ? 'API 키가 필요해요' : '자산 정보를 불러오지 못했어요'}
-          </p>
+          <p className="text-lg font-bold text-toss-text-primary mb-2">자산 정보를 불러오지 못했어요</p>
           <p className="text-sm text-toss-text-secondary mb-5 leading-relaxed">
-            {authRequired
-              ? '자산 데이터를 보호하기 위해 등록된 API 키를 입력해주세요.'
-              : '서버가 시작 중이거나 네트워크 연결이 불안정할 수 있어요. 잠시 후 다시 시도해주세요.'}
+            서버가 시작 중이거나 네트워크 연결이 불안정할 수 있어요. 잠시 후 다시 시도해주세요.
           </p>
           <button
-            onClick={() => authRequired ? setAuthModalOpen(true) : refetch()}
+            onClick={() => refetch()}
             className="min-h-12 w-full px-5 bg-toss-blue text-white rounded-xl text-sm font-semibold active:scale-[0.98] transition-transform"
           >
-            {authRequired ? 'API 키 입력' : '다시 시도'}
+            다시 시도
           </button>
         </div>
-        {authModalOpen && (
-          <ApiKeyModal
-            onClose={() => {
-              setAuthModalOpen(false);
-              refetch();
-            }}
-          />
-        )}
       </div>
     );
   }

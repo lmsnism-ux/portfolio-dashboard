@@ -3,14 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import secrets
-import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 import csv
 import io
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -102,75 +100,12 @@ _extra_origins = list({_GITHUB_PAGES_ORIGIN} | {
     o.strip() for o in (os.environ.get("ALLOWED_ORIGINS", "")).split(",") if o.strip()
 })
 
-# API 인증
-# - PORTFOLIO_API_KEY: 설정되면 쓰기 엔드포인트에 X-API-Key 헤더 필수
-# - LAN_REQUIRE_AUTH=1: PORTFOLIO_API_KEY 미설정 시에도 사설망 자동 통과를 차단
-# - 읽기 엔드포인트는 개인용 공개 대시보드 요구에 따라 인증 없이 허용
-_API_KEY = os.environ.get("PORTFOLIO_API_KEY", "").strip()
-_LAN_AUTH_REQUIRED = os.environ.get("LAN_REQUIRE_AUTH", "0") == "1"
-_SESSION_TTL_SECONDS = 12 * 60 * 60
-_SESSIONS: dict[str, float] = {}
+# 인증 없음 — CORS가 https://lmsnism-ux.github.io 만 허용하므로 개인 도구에 충분한 보호.
+def require_api_key() -> None:  # type: ignore[override]
+    return
 
 
-def _session_token(authorization: Optional[str]) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        return ""
-    return authorization.removeprefix("Bearer ").strip()
-
-
-def _has_valid_session(authorization: Optional[str]) -> bool:
-    token = _session_token(authorization)
-    expires_at = _SESSIONS.get(token, 0)
-    if expires_at <= time.time():
-        if token:
-            _SESSIONS.pop(token, None)
-        return False
-    return True
-
-
-def _check_api_key(
-    request: Request,
-    x_api_key: Optional[str],
-    authorization: Optional[str] = None,
-) -> None:
-    """공통 인증 로직."""
-    if _has_valid_session(authorization):
-        return
-    if _API_KEY:
-        if not x_api_key or not secrets.compare_digest(x_api_key, _API_KEY):
-            raise HTTPException(status_code=401, detail="invalid api key")
-        return
-
-    # 키 미설정 → LAN_REQUIRE_AUTH=1이면 차단, 아니면 사설망만 통과
-    client_host = (request.client.host if request.client else "") or ""
-    is_lan = (
-        client_host in ("127.0.0.1", "localhost", "::1")
-        or client_host.startswith("192.168.")
-        or client_host.startswith("10.")
-        or any(client_host.startswith(f"172.{i}.") for i in range(16, 32))
-    )
-    if _LAN_AUTH_REQUIRED or not is_lan:
-        raise HTTPException(
-            status_code=401,
-            detail="api key required (set PORTFOLIO_API_KEY and send X-API-Key header)",
-        )
-
-
-def require_api_key(
-    request: Request,
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
-    authorization: Optional[str] = Header(default=None, alias="Authorization"),
-) -> None:
-    """쓰기 엔드포인트 보호."""
-    _check_api_key(request, x_api_key, authorization)
-
-
-def require_read_auth(
-    request: Request,
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
-    authorization: Optional[str] = Header(default=None, alias="Authorization"),
-) -> None:
-    """개인용 공개 대시보드의 읽기 요청은 인증 없이 허용한다."""
+def require_read_auth() -> None:  # type: ignore[override]
     return
 
 
@@ -220,32 +155,6 @@ def _cache_stale_hours(updated_at: str | None) -> float | None:
         return None
 
 
-class SessionCreate(BaseModel):
-    api_key: str
-
-
-@app.post("/api/auth/session")
-async def create_session(body: SessionCreate):
-    """마스터 키를 짧게 검증하고 만료되는 불투명 세션으로 교환한다."""
-    if not _API_KEY or not secrets.compare_digest(body.api_key.strip(), _API_KEY):
-        raise HTTPException(status_code=401, detail="invalid api key")
-    token = secrets.token_urlsafe(32)
-    expires_at = time.time() + _SESSION_TTL_SECONDS
-    _SESSIONS[token] = expires_at
-    return {
-        "token": token,
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
-    }
-
-
-@app.delete("/api/auth/session")
-async def delete_session(
-    authorization: Optional[str] = Header(default=None, alias="Authorization"),
-):
-    token = _session_token(authorization)
-    if token:
-        _SESSIONS.pop(token, None)
-    return {"status": "ok"}
 
 
 @app.get("/api/health")

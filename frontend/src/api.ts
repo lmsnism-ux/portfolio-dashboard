@@ -6,80 +6,12 @@ import type { CashFlowRecord, HistoryPoint, InvestmentDecision, PerformanceSumma
 const _RAW_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '');
 const BASE = `${_RAW_BASE}/api`;
 
-// 마스터 키는 저장하지 않는다. 로그인으로 발급받은 12시간 세션만 현재 탭에 보관한다.
-const SESSION_STORE = 'pd_session';
-export class ApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
-export function isAuthError(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 401;
-}
-
-export function getSessionToken(): string {
-  return sessionStorage.getItem(SESSION_STORE) ?? '';
-}
-export function clearSession(): void {
-  sessionStorage.removeItem(SESSION_STORE);
-  localStorage.removeItem('pd_api_key');
-}
-
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const token = getSessionToken();
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
-}
-
-export async function createSession(apiKey: string): Promise<void> {
-  const res = await fetch(`${BASE}/auth/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({ api_key: apiKey }),
-  });
-  if (!res.ok) throw new ApiError(res.status, '로그인 키를 확인해주세요.');
-  const data = await res.json() as { token: string };
-  sessionStorage.setItem(SESSION_STORE, data.token);
-  localStorage.removeItem('pd_api_key');
-}
-
-export async function deleteSession(): Promise<void> {
-  const headers = authHeaders();
-  try {
-    await fetch(`${BASE}/auth/session`, { method: 'DELETE', headers, cache: 'no-store' });
-  } finally {
-    clearSession();
-  }
-}
-
 async function writeFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const headers = authHeaders((init.headers as Record<string, string>) ?? {});
-  const res = await fetch(url, { ...init, headers, cache: 'no-store' });
-  if (res.status === 401) {
-    clearSession();
-    throw new ApiError(401, 'API 키를 확인해주세요.');
-  }
-  return res;
+  return fetch(url, { ...init, cache: 'no-store' });
 }
 
-/**
- * 자산 정보를 노출하는 GET 요청용. 백엔드가 READ_REQUIRE_AUTH=1로
- * 켜져 있으면 X-API-Key가 필수 — 키가 저장돼 있으면 자동 부착한다.
- * 키 미저장 + 401이면 API 키 설정을 안내.
- */
 async function readFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const headers = authHeaders((init.headers as Record<string, string>) ?? {});
-  const res = await fetch(url, { ...init, headers, cache: 'no-store' });
-  if (res.status === 401) {
-    clearSession();
-    throw new ApiError(401, 'API 키를 확인해주세요.');
-  }
-  return res;
+  return fetch(url, { ...init, cache: 'no-store' });
 }
 
 // 콜드스타트(Render 절전 30~60초) 동안 빈 화면 대신 직전 스냅샷을 즉시 보여주기 위한 캐시
@@ -420,8 +352,7 @@ export async function reorderAccounts(names: string[]): Promise<void> {
 }
 
 export async function downloadCsv(): Promise<void> {
-  const headers = authHeaders();
-  const res = await fetch(`${BASE}/export/csv`, { headers, cache: 'no-store' });
+  const res = await fetch(`${BASE}/export/csv`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`CSV 다운로드 실패 (${res.status})`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
