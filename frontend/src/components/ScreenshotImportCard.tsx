@@ -127,6 +127,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<CandidateRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [rawOcrText, setRawOcrText] = useState('');
   const account = useMemo(
     () => data.accounts.find((item) => item.name === accountName) ?? data.accounts[0],
     [accountName, data.accounts],
@@ -148,6 +149,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       return valid.map((file) => URL.createObjectURL(file));
     });
     setRows([]);
+    setRawOcrText('');
     setProgress(0);
     setStatus(valid.length > 1
       ? `이미지 ${valid.length}장에서 글자를 읽는 중이에요. 처음에는 한글 인식 파일을 내려받아 조금 걸릴 수 있어요.`
@@ -163,23 +165,27 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       });
       // 여러 장을 순차 인식해 후보를 누적·병합(같은 종목은 수량이 채워진 쪽 우선).
       const merged = new Map<string, CandidateRow>();
+      const allTexts: string[] = [];
       for (let i = 0; i < valid.length; i += 1) {
         if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
         setProgress(0);
         const result = await worker.recognize(valid[i]);
+        allTexts.push(result.data.text);
         for (const candidate of extractCandidates(result.data.text, account)) {
           const key = candidate.holding.ticker || candidate.holding.name;
           const existing = merged.get(key);
           if (!existing || (!existing.shares && candidate.shares)) merged.set(key, candidate);
         }
       }
+      setRawOcrText(allTexts.join('\n---\n'));
       const candidates = [...merged.values()];
       setRows(candidates);
       setProgress(100);
       setStatus(candidates.length
         ? `${candidates.length}개 종목을 찾았어요. 숫자를 확인한 뒤 반영해주세요.`
-        : '일치하는 종목을 찾지 못했어요. 계좌 선택과 캡처의 종목명이 맞는지 확인해주세요.');
-    } catch {
+        : '일치하는 종목을 찾지 못했어요. 계좌와 캡처의 종목명이 맞는지 아래 인식 텍스트를 확인해주세요.');
+    } catch (err) {
+      setRawOcrText(String(err));
       setStatus('이미지를 읽지 못했어요. 인터넷 연결과 이미지 선명도를 확인해주세요.');
     } finally {
       await worker?.terminate();
@@ -286,6 +292,13 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
             {progress > 0 && progress < 100 && <LoaderCircle size={14} className="mr-2 inline animate-spin text-toss-blue" />}
             {status}{progress > 0 && progress < 100 ? ` ${progress}%` : ''}
           </div>
+        )}
+
+        {rawOcrText && progress === 100 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-[11px] text-toss-text-tertiary select-none">인식된 텍스트 보기 (매칭 안 될 때 확인)</summary>
+            <pre className="mt-2 max-h-48 overflow-y-auto rounded-xl bg-toss-bg p-3 text-[10px] leading-relaxed text-toss-text-secondary whitespace-pre-wrap break-all">{rawOcrText}</pre>
+          </details>
         )}
 
         {rows.length > 0 && (

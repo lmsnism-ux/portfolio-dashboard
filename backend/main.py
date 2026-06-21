@@ -783,22 +783,39 @@ _KR_SUFFIXES = (".KS", ".KQ")
 _US_EXCHANGES = {"NYQ", "NMS", "NGM", "PCX", "ASE", "BTS", "NCM", "CCS", "ARC", "NIM"}
 _SKIP_TYPES   = {"MUTUALFUND", "FUTURE", "OPTION", "INDEX", "CURRENCY", "CRYPTOCURRENCY"}
 
-# 한국어 브랜드명 → Yahoo Finance 검색어 변환표
+# 한국어 → Yahoo Finance 검색어 변환표 (지수명·브랜드명·테마명)
+# 주의: Yahoo Finance는 단순 지수명(예: "nasdaq")을 검색하면 INDEX 타입을 반환해 필터됨.
+#       ETF가 나오게 하려면 브랜드명(tiger/kodex)이나 "etf" 접미어가 필요함.
 _KR_BRAND_MAP: dict[str, str] = {
-    "코스피": "kospi", "코스닥": "kosdaq",
+    # 지수 → 브랜드 접두어 붙여 ETF 결과 유도
+    "나스닥": "tiger nasdaq", "나스닥100": "tiger nasdaq",
+    "에스앤피": "tiger s&p", "s&p": "tiger s&p",
+    "코스피": "kodex kospi", "코스닥": "kodex kosdaq",
+    "다우": "tiger dow jones",
+    "미국": "tiger us",
+    # ETF 운용사·브랜드 (브랜드명으로 직접 검색 가능)
     "코덱스": "kodex", "코덱": "kodex",
     "타이거": "tiger",
-    "케이비스타": "kbstar", "케이비": "kbstar",
-    "에이스": "ace etf", "에이스etf": "ace etf",
+    "케이비스타": "kbstar", "케이비스": "kbstar",
+    "에이스": "ace etf",
     "아리랑": "arirang",
     "키움": "kium",
-    "솔": "shinhan sol", "신한솔": "shinhan sol",
+    "솔": "shinhan sol", "신한솔": "shinhan sol", "신한": "shinhan sol",
     "미래에셋": "mirae asset tiger",
-    "삼성": "samsung kodex",
+    "삼성자산": "samsung kodex",
     "한국투자": "ace etf",
-    "마이티": "mighty",
     "파워": "power etf",
     "흥국": "heungkuk",
+    "하나로": "hanaro",
+    # 테마·섹터
+    "반도체": "semiconductor etf",
+    "2차전지": "battery etf", "이차전지": "battery etf",
+    "전기차": "electric vehicle etf",
+    "인공지능": "ai etf",
+    "미국채": "us treasury etf",
+    "배당": "dividend etf",
+    "인버스": "inverse etf",
+    "레버리지": "leverage etf",
 }
 
 
