@@ -437,6 +437,12 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [previewUrls]);
 
+  // 새 종목 추가 폼이 뜨면 사용자가 놓치지 않도록 그 위치로 스크롤한다.
+  const newFormRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (newReady) newFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [newReady]);
+
   const recognizeFiles = async (files: File[]) => {
     if (!targets.length || !files.length) return;
     const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= 10 * 1024 * 1024);
@@ -510,7 +516,9 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       }
       setStatus(candidates.length
         ? `${candidates.length}개 종목을 찾았어요. 숫자를 확인한 뒤 반영해주세요.`
-        : '계좌에 이미 있는 종목은 못 찾았어요. 아래에서 새 종목으로 추가하거나 인식된 텍스트를 확인해주세요.');
+        : (generic.shares != null || generic.avgPrice != null || generic.balance != null)
+          ? '계좌에 없는 새 종목 같아요. 아래 "➕ 새 종목으로 추가"에서 확인 후 추가하세요. (숫자는 채워뒀어요)'
+          : '종목을 찾지 못했어요. 아래 "인식된 텍스트"를 확인해주세요. 더 선명한 캡처면 인식이 잘 돼요.');
     } catch (err) {
       setRawOcrText(String(err));
       setStatus('이미지를 읽지 못했어요. 인터넷 연결과 이미지 선명도를 확인해주세요.');
@@ -622,7 +630,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
         )}
 
         {rawOcrText && progress === 100 && (
-          <details className="mt-3" open={rows.length === 0}>
+          <details className="mt-3" open={rows.length === 0 && !newReady}>
             <summary className="cursor-pointer text-[11px] text-toss-text-tertiary select-none">인식된 텍스트 보기 (매칭 안 되면 이 내용을 확인·공유하세요)</summary>
             <pre className="mt-2 max-h-48 overflow-y-auto rounded-xl bg-toss-bg p-3 text-[10px] leading-relaxed text-toss-text-secondary whitespace-pre-wrap break-all">{rawOcrText}</pre>
           </details>
@@ -664,7 +672,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
 
         {/* ── 새 종목으로 추가 (계좌에 없는 종목) ── */}
         {newReady && (
-          <div className="mt-4 rounded-2xl border border-dashed border-toss-blue/40 bg-toss-blue-soft/40 p-4 space-y-3">
+          <div ref={newFormRef} className="mt-4 rounded-2xl border border-dashed border-toss-blue/40 bg-toss-blue-soft/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-bold text-toss-text-primary">
               <Plus size={16} className="text-toss-blue" />새 종목으로 추가
             </div>
