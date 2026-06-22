@@ -184,21 +184,38 @@ async function preprocessImage(file: File): Promise<Blob> {
 }
 
 // 임계값: 낮을수록 더 많이 매칭(OCR 노이즈 허용), 높을수록 정밀
-const MATCH_THRESHOLD = 0.4;
+// 전체 계좌를 대조하므로 우연한 노이즈 매칭을 막기 위해 임계값을 높게 둔다.
+// 정상 매칭(전체 이름·티커·약어 토큰)은 0.67~1.0 이라 충분히 통과한다.
+const MATCH_THRESHOLD = 0.62;
 // 매칭 줄 기준 전후 몇 줄에서 숫자를 추출할지
 const CONTEXT_BEFORE = 1;
 const CONTEXT_AFTER = 4;
 
-// 단일 종목 상세 화면(라벨-값 한 줄): "보유 수량  1,470주" 처럼 라벨과 값이 같은 줄/같은 시각적 행에 있을 때 값을 뽑는다.
-// 잔고 "목록"에서는 라벨이 컬럼 헤더라 같은 행에 숫자가 없어 null → 기존 컬럼 로직을 방해하지 않는다.
-function labeledValue(lines: string[], positionedLines: OcrLine[], patterns: RegExp[], ticker: string | null): number | null {
+// 단일 종목 상세 화면에서 라벨에 딸린 값을 뽑는다.
+//  - 가로형: "보유 수량   1,470주" (라벨·값 같은 행)
+//  - 세로형: "1주 평균금액" 줄 아래 "27,878원" (라벨 위, 값 아래)
+// min: 이 값보다 작은 숫자는 라벨 부속('1주'의 1 등)으로 보고 무시한다.
+// 잔고 "목록"의 컬럼 헤더는 같은 행/다음 줄에 자기 값이 없어 null → 기존 컬럼 로직을 방해하지 않는다.
+function labeledValue(
+  lines: string[],
+  positionedLines: OcrLine[],
+  patterns: RegExp[],
+  ticker: string | null,
+  min: number,
+): number | null {
   for (let i = 0; i < lines.length; i += 1) {
     if (!patterns.some((pattern) => pattern.test(normalized(lines[i])))) continue;
-    const onRow = positionedLines[i]
+    // 1) 같은 (시각적) 행
+    const sameRow = (positionedLines[i]
       ? numberWordsOnVisualRow(positionedLines, i, ticker).map((entry) => entry.value)
-      : numbersIn(lines[i], ticker);
-    const pool = onRow.filter((value) => value > 0);
-    if (pool.length) return Math.max(...pool);
+      : numbersIn(lines[i], ticker)
+    ).filter((value) => value >= min);
+    if (sameRow.length) return Math.max(...sameRow);
+    // 2) 세로형: 바로 아래 1~2줄
+    for (let j = i + 1; j <= Math.min(lines.length - 1, i + 2); j += 1) {
+      const below = numbersIn(lines[j], ticker).filter((value) => value >= min);
+      if (below.length) return Math.max(...below);
+    }
   }
   return null;
 }
@@ -248,7 +265,7 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
     if (holding.is_snapshot) {
       // 스냅샷 종목(예수금·수동입력 잔액): 숫자 1개를 총 평가금액으로 추출
       const snapshotVal = nearestColumn(rowNumbers, snapshotX)
-        ?? labeledValue(lines, positionedLines, [/평가금액/, /평가액/, /총금액/, /잔액/], holding.ticker)
+        ?? labeledValue(lines, positionedLines, [/평가금액/, /평가액/, /총금액/, /잔액/], holding.ticker, 100)
         ?? closest(values, holding.value_krw);
       rows.push({
         holding,
@@ -262,10 +279,10 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
     } else {
       // 컬럼 위치 → 라벨-값(단일 종목 상세) → 기존값 근사 순으로 수량/평단을 고른다.
       const shares = nearestColumn(rowNumbers, sharesX)
-        ?? labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], holding.ticker)
+        ?? labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], holding.ticker, 1)
         ?? closest(values, holding.shares);
       const avgPrice = nearestColumn(rowNumbers, avgPriceX)
-        ?? labeledValue(lines, positionedLines, [/평균금액/, /평균단가/, /매입단가/, /평단/, /^평균/], holding.ticker)
+        ?? labeledValue(lines, positionedLines, [/평균금액/, /평균단가/, /매입단가/, /평단/, /^평균/], holding.ticker, 10)
         ?? closest(values, holding.avg_price, shares ?? undefined);
       rows.push({
         holding,
@@ -470,8 +487,8 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
         )}
 
         {rawOcrText && progress === 100 && (
-          <details className="mt-3">
-            <summary className="cursor-pointer text-[11px] text-toss-text-tertiary select-none">인식된 텍스트 보기 (매칭 안 될 때 확인)</summary>
+          <details className="mt-3" open={rows.length === 0}>
+            <summary className="cursor-pointer text-[11px] text-toss-text-tertiary select-none">인식된 텍스트 보기 (매칭 안 되면 이 내용을 확인·공유하세요)</summary>
             <pre className="mt-2 max-h-48 overflow-y-auto rounded-xl bg-toss-bg p-3 text-[10px] leading-relaxed text-toss-text-secondary whitespace-pre-wrap break-all">{rawOcrText}</pre>
           </details>
         )}
