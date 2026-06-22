@@ -320,8 +320,8 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
   return rows;
 }
 
-// 종목을 모르는 상태에서도 이미지의 수량·평단을 추출한다(신규 종목 추가용).
-function extractGeneric(text: string, tsv?: string | null): { shares: number | null; avgPrice: number | null } {
+// 종목을 모르는 상태에서도 이미지의 수량·평단·잔액을 추출한다(신규 종목 추가용).
+function extractGeneric(text: string, tsv?: string | null): { shares: number | null; avgPrice: number | null; balance: number | null } {
   const positionedLines = parseTsv(tsv);
   const lines = positionedLines.length
     ? positionedLines.map((line) => line.text)
@@ -337,7 +337,11 @@ function extractGeneric(text: string, tsv?: string | null): { shares: number | n
       }
     }
   }
-  return { shares, avgPrice };
+  // 예적금·현금 잔액: 라벨 우선, 없으면 화면에서 가장 큰 금액(>=1만)을 잔액으로 본다.
+  const allNums = lines.flatMap((line) => numbersIn(line, null)).filter((value) => value >= 10000);
+  const balance = labeledValue(lines, positionedLines, [/잔액/, /평가금액/, /예수금/, /총금액/], null, 1000)
+    ?? (allNums.length ? Math.max(...allNums) : null);
+  return { shares, avgPrice, balance };
 }
 
 export default function ScreenshotImportCard({ data }: { data: PortfolioSummary }) {
@@ -357,11 +361,13 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
 
   // ── 신규 종목 추가용 상태 (계좌에 없는 종목을 이미지로 새로 등록) ──
   const [newReady, setNewReady] = useState(false);       // OCR에서 숫자를 뽑아 새 종목 폼을 띄울 준비됨
+  const [newMode, setNewMode] = useState<'stock' | 'cash'>('stock'); // 주식·ETF vs 예적금·현금(잔액)
   const [newName, setNewName] = useState('');
   const [newTicker, setNewTicker] = useState('');
   const [newAccount, setNewAccount] = useState(data.accounts[0]?.name ?? '');
   const [newShares, setNewShares] = useState('');
   const [newAvg, setNewAvg] = useState('');
+  const [newBalance, setNewBalance] = useState('');
   const [newSearchQ, setNewSearchQ] = useState('');
   const [newResults, setNewResults] = useState<TickerSearchResult[]>([]);
   const [newSearching, setNewSearching] = useState(false);
@@ -391,23 +397,35 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
 
   const addNewHolding = async () => {
     if (!newName.trim() || !newAccount) return;
-    const sharesN = parseFloat(newShares);
-    const avgN = parseFloat(newAvg);
     const isUsd = data.accounts.find((a) => a.name === newAccount)?.currency === 'USD';
     setAdding(true);
     try {
-      await createHolding({
-        account_name: newAccount,
-        name: newName.trim(),
-        ticker: newTicker.trim() || null,
-        shares: Number.isFinite(sharesN) ? sharesN : null,
-        avg_price_krw: !isUsd && Number.isFinite(avgN) ? avgN : undefined,
-        avg_price_usd: isUsd && Number.isFinite(avgN) ? avgN : undefined,
-      });
+      if (newMode === 'cash') {
+        // 예적금·현금: 잔액만 직접 입력(스냅샷 종목으로 등록)
+        const balanceN = parseFloat(newBalance.replace(/,/g, ''));
+        await createHolding({
+          account_name: newAccount,
+          name: newName.trim(),
+          asset_class: '현금',
+          snapshot_value_krw: !isUsd && Number.isFinite(balanceN) ? balanceN : undefined,
+          snapshot_value_usd: isUsd && Number.isFinite(balanceN) ? balanceN : undefined,
+        });
+      } else {
+        const sharesN = parseFloat(newShares);
+        const avgN = parseFloat(newAvg);
+        await createHolding({
+          account_name: newAccount,
+          name: newName.trim(),
+          ticker: newTicker.trim() || null,
+          shares: Number.isFinite(sharesN) ? sharesN : null,
+          avg_price_krw: !isUsd && Number.isFinite(avgN) ? avgN : undefined,
+          avg_price_usd: isUsd && Number.isFinite(avgN) ? avgN : undefined,
+        });
+      }
       await queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       setStatus(`'${newName.trim()}'을(를) ${newAccount}에 새로 추가했어요.`);
       setNewReady(false);
-      setNewName(''); setNewTicker(''); setNewShares(''); setNewAvg('');
+      setNewName(''); setNewTicker(''); setNewShares(''); setNewAvg(''); setNewBalance('');
     } catch (err) {
       setStatus(`새 종목 추가 실패: ${(err as Error).message}`);
     } finally {
@@ -450,7 +468,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       // 여러 장을 순차 인식해 후보를 누적·병합(같은 종목은 수량이 채워진 쪽 우선).
       const merged = new Map<string, CandidateRow>();
       const allTexts: string[] = [];
-      const generic = { shares: null as number | null, avgPrice: null as number | null };
+      const generic = { shares: null as number | null, avgPrice: null as number | null, balance: null as number | null };
       for (let i = 0; i < valid.length; i += 1) {
         if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
         setProgress(0);
@@ -470,6 +488,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
         const g = extractGeneric(result.data.text, result.data.tsv);
         if (g.avgPrice != null && generic.avgPrice == null) generic.avgPrice = g.avgPrice;
         if (g.shares != null && generic.shares == null) generic.shares = g.shares;
+        if (g.balance != null && generic.balance == null) generic.balance = g.balance;
         for (const candidate of candidates) {
           const key = `${candidate.accountName}|${candidate.holding.ticker || candidate.holding.name}`;
           const existing = merged.get(key);
@@ -480,10 +499,13 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       const candidates = [...merged.values()];
       setRows(candidates);
       setProgress(100);
-      // 이미지에서 수량/평단이 잡히면 '새 종목으로 추가' 폼을 준비한다.
-      if (generic.shares != null || generic.avgPrice != null) {
+      // 이미지에서 수량/평단/잔액이 잡히면 '새 종목으로 추가' 폼을 준비한다.
+      if (generic.shares != null || generic.avgPrice != null || generic.balance != null) {
         setNewShares(generic.shares != null ? String(generic.shares) : '');
         setNewAvg(generic.avgPrice != null ? String(generic.avgPrice) : '');
+        setNewBalance(generic.balance != null ? String(generic.balance) : '');
+        // 주식 숫자(수량·평단)가 없고 잔액만 있으면 예적금·현금으로 기본 설정
+        setNewMode(generic.shares == null && generic.avgPrice == null && generic.balance != null ? 'cash' : 'stock');
         setNewReady(true);
       }
       setStatus(candidates.length
@@ -646,63 +668,94 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
             <div className="flex items-center gap-2 text-sm font-bold text-toss-text-primary">
               <Plus size={16} className="text-toss-blue" />새 종목으로 추가
             </div>
-            <p className="text-[11px] leading-relaxed text-toss-text-tertiary">
-              계좌에 없는 종목이면 여기서 새로 추가하세요. 수량·평단은 이미지에서 채웠어요.
-              한글 이름은 깨질 수 있으니 <b>검색으로 정확한 종목</b>을 골라주세요(가격 자동조회됨).
-            </p>
-
-            {/* 종목 검색 */}
-            <div>
-              <label className="search-field">
-                <Search size={15} className="shrink-0" />
-                <input
-                  value={newSearchQ}
-                  onChange={(e) => setNewSearchQ(e.target.value)}
-                  placeholder="종목명·티커 검색 (예: SOL TOP2, QQQ)"
-                  className="min-w-0 flex-1 bg-transparent text-sm text-toss-text-primary outline-none"
-                />
-                {newSearching && <LoaderCircle size={15} className="shrink-0 animate-spin text-toss-blue" />}
-              </label>
-              {newResults.length > 0 && (
-                <div className="mt-2 rounded-xl border border-toss-border overflow-hidden divide-y divide-toss-border/60">
-                  {newResults.map((r) => (
-                    <button key={r.symbol} type="button" onClick={() => pickSearchResult(r)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-toss-bg">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${r.market === 'KR' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'}`}>{r.market}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-toss-text-primary">{r.name}</span>
-                        <span className="block text-[10px] text-toss-text-tertiary">{r.ticker} · {r.type === 'ETF' ? 'ETF' : '주식'}</span>
-                      </span>
-                      <ChevronRight size={14} className="text-toss-text-tertiary shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 종목명 / 티커 */}
+            {/* 종류: 주식·ETF / 예적금·현금 */}
             <div className="grid grid-cols-2 gap-2">
-              <label className="text-[11px] text-toss-text-tertiary">종목 이름
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="검색 후 자동 입력" className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
-              </label>
-              <label className="text-[11px] text-toss-text-tertiary">티커
-                <input value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="예: 0167A0" className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue uppercase" />
-              </label>
+              {([['stock', '주식·ETF'], ['cash', '예적금·현금']] as const).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setNewMode(m)}
+                  className={`py-2 rounded-xl text-[12px] font-bold border transition-all ${newMode === m ? 'border-toss-blue bg-toss-blue/10 text-toss-blue' : 'border-toss-border bg-toss-bg text-toss-text-secondary'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {/* 계좌 / 수량 / 평단 */}
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-[11px] text-toss-text-tertiary">계좌
-                <select value={newAccount} onChange={(e) => setNewAccount(e.target.value)} className="mt-1 w-full rounded-xl bg-toss-bg px-2 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue">
-                  {data.accounts.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
-                </select>
-              </label>
-              <label className="text-[11px] text-toss-text-tertiary">보유 수량
-                <input inputMode="decimal" value={newShares} onChange={(e) => setNewShares(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
-              </label>
-              <label className="text-[11px] text-toss-text-tertiary">평균 매수가
-                <input inputMode="decimal" value={newAvg} onChange={(e) => setNewAvg(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
-              </label>
-            </div>
+            {newMode === 'stock' ? (
+              <>
+                <p className="text-[11px] leading-relaxed text-toss-text-tertiary">
+                  한글 이름은 깨질 수 있으니 <b>검색으로 정확한 종목</b>을 골라주세요(가격 자동조회됨). 수량·평단은 이미지에서 채웠어요.
+                </p>
+                {/* 종목 검색 */}
+                <div>
+                  <label className="search-field">
+                    <Search size={15} className="shrink-0" />
+                    <input
+                      value={newSearchQ}
+                      onChange={(e) => setNewSearchQ(e.target.value)}
+                      placeholder="종목명·티커 검색 (예: SOL TOP2, QQQ)"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-toss-text-primary outline-none"
+                    />
+                    {newSearching && <LoaderCircle size={15} className="shrink-0 animate-spin text-toss-blue" />}
+                  </label>
+                  {newResults.length > 0 && (
+                    <div className="mt-2 rounded-xl border border-toss-border overflow-hidden divide-y divide-toss-border/60">
+                      {newResults.map((r) => (
+                        <button key={r.symbol} type="button" onClick={() => pickSearchResult(r)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-toss-bg">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${r.market === 'KR' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'}`}>{r.market}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-toss-text-primary">{r.name}</span>
+                            <span className="block text-[10px] text-toss-text-tertiary">{r.ticker} · {r.type === 'ETF' ? 'ETF' : '주식'}</span>
+                          </span>
+                          <ChevronRight size={14} className="text-toss-text-tertiary shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 종목명 / 티커 */}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-toss-text-tertiary">종목 이름
+                    <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="검색 후 자동 입력" className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                  </label>
+                  <label className="text-[11px] text-toss-text-tertiary">티커
+                    <input value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="예: 0167A0" className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue uppercase" />
+                  </label>
+                </div>
+
+                {/* 계좌 / 수량 / 평단 */}
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="text-[11px] text-toss-text-tertiary">계좌
+                    <select value={newAccount} onChange={(e) => setNewAccount(e.target.value)} className="mt-1 w-full rounded-xl bg-toss-bg px-2 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue">
+                      {data.accounts.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[11px] text-toss-text-tertiary">보유 수량
+                    <input inputMode="decimal" value={newShares} onChange={(e) => setNewShares(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                  </label>
+                  <label className="text-[11px] text-toss-text-tertiary">평균 매수가
+                    <input inputMode="decimal" value={newAvg} onChange={(e) => setNewAvg(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] leading-relaxed text-toss-text-tertiary">
+                  청년도약계좌·예적금·CMA처럼 가격이 없는 자산이에요. 이름과 잔액만 입력하면 돼요(잔액은 이미지에서 채웠어요).
+                </p>
+                <label className="block text-[11px] text-toss-text-tertiary">이름
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: IBK 청년도약계좌" className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-toss-text-tertiary">계좌
+                    <select value={newAccount} onChange={(e) => setNewAccount(e.target.value)} className="mt-1 w-full rounded-xl bg-toss-bg px-2 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue">
+                      {data.accounts.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-[11px] text-toss-text-tertiary">잔액 (원)
+                    <input inputMode="numeric" value={newBalance} onChange={(e) => setNewBalance(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm font-semibold text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+                  </label>
+                </div>
+              </>
+            )}
 
             <button type="button" onClick={() => void addNewHolding()} disabled={adding || !newName.trim() || !newAccount} className="primary-button flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold disabled:opacity-50">
               <Plus size={16} />{adding ? '추가 중...' : `${newAccount || '계좌'}에 새 종목 추가`}
