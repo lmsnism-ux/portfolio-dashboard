@@ -6,6 +6,7 @@ import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 
 interface CandidateRow {
   holding: HoldingData;
+  accountName: string;
   selected: boolean;
   shares: string;
   avgPrice: string;
@@ -188,6 +189,20 @@ const MATCH_THRESHOLD = 0.4;
 const CONTEXT_BEFORE = 1;
 const CONTEXT_AFTER = 4;
 
+// 단일 종목 상세 화면(라벨-값 한 줄): "보유 수량  1,470주" 처럼 라벨과 값이 같은 줄/같은 시각적 행에 있을 때 값을 뽑는다.
+// 잔고 "목록"에서는 라벨이 컬럼 헤더라 같은 행에 숫자가 없어 null → 기존 컬럼 로직을 방해하지 않는다.
+function labeledValue(lines: string[], positionedLines: OcrLine[], patterns: RegExp[], ticker: string | null): number | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!patterns.some((pattern) => pattern.test(normalized(lines[i])))) continue;
+    const onRow = positionedLines[i]
+      ? numberWordsOnVisualRow(positionedLines, i, ticker).map((entry) => entry.value)
+      : numbersIn(lines[i], ticker);
+    const pool = onRow.filter((value) => value > 0);
+    if (pool.length) return Math.max(...pool);
+  }
+  return null;
+}
+
 function extractCandidates(text: string, account: AccountData, tsv?: string | null): CandidateRow[] {
   const positionedLines = parseTsv(tsv);
   const lines = positionedLines.length
@@ -226,16 +241,18 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
     const to = Math.min(lines.length, bestIndex + CONTEXT_AFTER + 1);
     const source = lines.slice(from, to).join(' ');
     const values = numbersIn(source, holding.ticker);
-    if (!values.length) return;
     const rowNumbers = positionedLines[bestIndex]
       ? numberWordsOnVisualRow(positionedLines, bestIndex, holding.ticker)
       : [];
 
     if (holding.is_snapshot) {
       // 스냅샷 종목(예수금·수동입력 잔액): 숫자 1개를 총 평가금액으로 추출
-      const snapshotVal = nearestColumn(rowNumbers, snapshotX) ?? closest(values, holding.value_krw);
+      const snapshotVal = nearestColumn(rowNumbers, snapshotX)
+        ?? labeledValue(lines, positionedLines, [/평가금액/, /평가액/, /총금액/, /잔액/], holding.ticker)
+        ?? closest(values, holding.value_krw);
       rows.push({
         holding,
+        accountName: account.name,
         selected: true,
         shares: '',
         avgPrice: '',
@@ -243,10 +260,16 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
         source,
       });
     } else {
-      const shares = nearestColumn(rowNumbers, sharesX) ?? closest(values, holding.shares);
-      const avgPrice = nearestColumn(rowNumbers, avgPriceX) ?? closest(values, holding.avg_price, shares ?? undefined);
+      // 컬럼 위치 → 라벨-값(단일 종목 상세) → 기존값 근사 순으로 수량/평단을 고른다.
+      const shares = nearestColumn(rowNumbers, sharesX)
+        ?? labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], holding.ticker)
+        ?? closest(values, holding.shares);
+      const avgPrice = nearestColumn(rowNumbers, avgPriceX)
+        ?? labeledValue(lines, positionedLines, [/평균금액/, /평균단가/, /매입단가/, /평단/, /^평균/], holding.ticker)
+        ?? closest(values, holding.avg_price, shares ?? undefined);
       rows.push({
         holding,
+        accountName: account.name,
         selected: true,
         shares: shares == null ? '' : String(shares),
         avgPrice: avgPrice == null ? '' : String(avgPrice),
@@ -261,15 +284,16 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
 
 export default function ScreenshotImportCard({ data }: { data: PortfolioSummary }) {
   const queryClient = useQueryClient();
-  const [accountName, setAccountName] = useState(data.accounts[0]?.name ?? '');
+  // '' = 전체 계좌에서 찾기 (기본). 특정 계좌명이면 그 계좌만 대조.
+  const [accountName, setAccountName] = useState('');
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<CandidateRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [rawOcrText, setRawOcrText] = useState('');
-  const account = useMemo(
-    () => data.accounts.find((item) => item.name === accountName) ?? data.accounts[0],
+  const targets = useMemo(
+    () => (accountName ? data.accounts.filter((item) => item.name === accountName) : data.accounts),
     [accountName, data.accounts],
   );
 
@@ -278,7 +302,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
   }, [previewUrls]);
 
   const recognizeFiles = async (files: File[]) => {
-    if (!account || !files.length) return;
+    if (!targets.length || !files.length) return;
     const valid = files.filter((file) => file.type.startsWith('image/') && file.size <= 10 * 1024 * 1024);
     if (!valid.length) {
       setStatus('10MB 이하의 PNG, JPG 또는 WebP 이미지를 선택해주세요.');
@@ -310,18 +334,20 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       for (let i = 0; i < valid.length; i += 1) {
         if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
         setProgress(0);
+        const scan = (txt: string, tsvData?: string | null) =>
+          targets.flatMap((acc) => extractCandidates(txt, acc, tsvData));
         const processed = await preprocessImage(valid[i]);
         let result = await worker.recognize(processed, {}, { text: true, tsv: true });
-        let candidates = extractCandidates(result.data.text, account, result.data.tsv);
+        let candidates = scan(result.data.text, result.data.tsv);
         // 전처리 이미지에서 종목을 못 찾으면 원본도 다시 읽는다.
         if (!candidates.length) {
           const original = await worker.recognize(valid[i], {}, { text: true, tsv: true });
           result = original;
-          candidates = extractCandidates(original.data.text, account, original.data.tsv);
+          candidates = scan(original.data.text, original.data.tsv);
         }
         allTexts.push(result.data.text);
         for (const candidate of candidates) {
-          const key = candidate.holding.ticker || candidate.holding.name;
+          const key = `${candidate.accountName}|${candidate.holding.ticker || candidate.holding.name}`;
           const existing = merged.get(key);
           if (!existing || (!existing.shares && candidate.shares)) merged.set(key, candidate);
         }
@@ -346,7 +372,6 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
   };
 
   const apply = async () => {
-    if (!account) return;
     const selected = rows.filter((row) => row.selected);
     if (!selected.length) {
       setStatus('반영할 종목을 하나 이상 선택해주세요.');
@@ -368,7 +393,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
         if (row.holding.is_snapshot) {
           const val = Number(row.snapshotVal);
           return {
-            account_name: account.name,
+            account_name: row.accountName,
             holding_key: row.holding.ticker || row.holding.name,
             ...(Number.isFinite(val) && val >= 0
               ? row.holding.currency === 'USD'
@@ -379,7 +404,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
         }
         const avgPrice = Number(row.avgPrice);
         return {
-          account_name: account.name,
+          account_name: row.accountName,
           holding_key: row.holding.ticker || row.holding.name,
           shares: Number(row.shares),
           ...(Number.isFinite(avgPrice) && avgPrice > 0
@@ -406,7 +431,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           <span className="icon-well"><ImagePlus size={19} /></span>
           <div>
             <h2 id="screenshot-import-title" className="text-base font-bold text-toss-text-primary">캡처로 자산 입력</h2>
-            <p className="mt-1 text-xs leading-relaxed text-toss-text-tertiary">증권사 잔고 화면을 읽어 기존 종목의 수량과 평단 후보를 만들어요.</p>
+            <p className="mt-1 text-xs leading-relaxed text-toss-text-tertiary">증권사 잔고 목록이나 종목 상세 화면을 읽어 수량·평단 후보를 만들어요. 모든 계좌에서 자동으로 찾아줘요.</p>
           </div>
         </div>
 
@@ -414,6 +439,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           <label className="search-field">
             <span className="text-xs font-semibold">계좌</span>
             <select value={accountName} onChange={(event) => { setAccountName(event.target.value); setRows([]); }} className="min-w-0 flex-1 bg-transparent text-sm text-toss-text-primary outline-none">
+              <option value="">전체 계좌에서 찾기</option>
               {data.accounts.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
             </select>
           </label>
@@ -454,10 +480,13 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           <div className="mt-4 space-y-3">
             <div className="flex items-center gap-2 text-[11px] text-toss-text-tertiary"><ShieldCheck size={14} />OCR 숫자는 틀릴 수 있어요. 수량과 평단을 반드시 확인해주세요.</div>
             {rows.map((row, index) => (
-              <div key={row.holding.ticker || row.holding.name} className="rounded-2xl border border-toss-border p-4">
+              <div key={`${row.accountName}|${row.holding.ticker || row.holding.name}`} className="rounded-2xl border border-toss-border p-4">
                 <label className="flex items-center gap-2 text-sm font-bold text-toss-text-primary">
                   <input type="checkbox" checked={row.selected} onChange={(event) => updateRow(index, { selected: event.target.checked })} />
-                  {row.holding.name}
+                  <span className="min-w-0">
+                    <span className="block truncate">{row.holding.name}</span>
+                    <span className="block text-[11px] font-medium text-toss-text-tertiary">{row.accountName}</span>
+                  </span>
                 </label>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {row.holding.is_snapshot ? (

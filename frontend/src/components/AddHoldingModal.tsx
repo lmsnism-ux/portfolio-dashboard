@@ -151,7 +151,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
 
   return (
     <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      className="modal-backdrop fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 sm:backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
     >
       <div
