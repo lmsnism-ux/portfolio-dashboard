@@ -71,8 +71,12 @@ function tokenContainment(nameTokens: string[], lineTokens: string[]): number {
   if (!sig.length) return 0;
   // 한 글자/한 자리 토큰(예: '적극투자형2'의 '2')은 식별력이 없어 제외 — 깨진 OCR 토큰과의 우연한 일치 방지
   const names = nameTokens.filter((n) => n.length >= 2);
-  const hit = sig.filter((t) => names.some((n) => n === t || n.includes(t) || t.includes(n))).length;
-  return hit >= 2 ? hit / sig.length : 0;
+  const matched = sig.filter((t) => names.some((n) => n === t || n.includes(t) || t.includes(n)));
+  if (!matched.length) return 0;
+  // 토큰 2개 이상 일치하면 통과. 단, 긴 토큰(>=4자, 예 '청년도약계좌')이 정확히 일치하면 단독으로도 강한 신호로 인정.
+  const distinctive = matched.some((t) => t.length >= 4 && names.includes(t));
+  if (matched.length >= 2 || distinctive) return matched.length / sig.length;
+  return 0;
 }
 
 function numbersIn(value: string, ticker: string | null): number[] {
@@ -266,9 +270,12 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
       : [];
 
     if (holding.is_snapshot) {
-      // 스냅샷 종목(예수금·수동입력 잔액): 숫자 1개를 총 평가금액으로 추출
+      // 스냅샷 종목(예적금·예수금 잔액): 라벨 → 컨텍스트 내 가장 큰 금액 → 기존값 근사
+      // (계좌번호·날짜 등은 작거나 하이픈으로 음수 처리되어 걸러진다)
+      const largeVals = values.filter((value) => value >= 1000);
       const snapshotVal = nearestColumn(rowNumbers, snapshotX)
         ?? labeledValue(lines, positionedLines, [/평가금액/, /평가액/, /총금액/, /잔액/], holding.ticker, 100)
+        ?? (largeVals.length ? Math.max(...largeVals) : null)
         ?? closest(values, holding.value_krw);
       rows.push({
         holding,
@@ -371,7 +378,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       const items = await searchTickers(q);
       setNewResults(items);
       setNewSearching(false);
-    }, 300);
+    }, 120);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [newSearchQ]);
 

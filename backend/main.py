@@ -916,6 +916,11 @@ async def search_tickers(q: str = ""):
         logger.warning(f"국내 ETF 목록 조회 실패: {exc}")
         kr_items = []
 
+    # 한글이 포함된 검색어는 국내 ETF 목록(로컬 캐시)에 다 들어있으므로
+    # 느린 Yahoo 호출을 건너뛰고 즉시 응답한다. (검색 체감 속도 개선)
+    if any("가" <= ch <= "힣" for ch in q):
+        return {"items": kr_items}
+
     # 미국 종목과 국내 개별 주식 보조 검색은 Yahoo를 유지한다.
     yahoo_q = _translate_kr_query(q)
     url = "https://query2.finance.yahoo.com/v1/finance/search"

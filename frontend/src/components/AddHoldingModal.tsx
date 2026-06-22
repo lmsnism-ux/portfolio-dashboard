@@ -78,7 +78,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
       setResults(items);
       setSearching(false);
       setSearchDone(true);
-    }, 300);
+    }, 120);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [searchQ, mode, activeQ]);
 
