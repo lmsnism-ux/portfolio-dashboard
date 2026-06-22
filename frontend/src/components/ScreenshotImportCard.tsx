@@ -68,7 +68,9 @@ function wordTokens(value: string): string[] {
 function tokenContainment(nameTokens: string[], lineTokens: string[]): number {
   const sig = lineTokens.filter((t) => t.length >= 2 && !/^\d+$/.test(t));
   if (!sig.length) return 0;
-  const hit = sig.filter((t) => nameTokens.some((nt) => nt === t || nt.includes(t) || t.includes(nt))).length;
+  // 한 글자/한 자리 토큰(예: '적극투자형2'의 '2')은 식별력이 없어 제외 — 깨진 OCR 토큰과의 우연한 일치 방지
+  const names = nameTokens.filter((n) => n.length >= 2);
+  const hit = sig.filter((t) => names.some((n) => n === t || n.includes(t) || t.includes(n))).length;
   return hit >= 2 ? hit / sig.length : 0;
 }
 
@@ -277,13 +279,24 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
         source,
       });
     } else {
-      // 컬럼 위치 → 라벨-값(단일 종목 상세) → 기존값 근사 순으로 수량/평단을 고른다.
-      const shares = nearestColumn(rowNumbers, sharesX)
-        ?? labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], holding.ticker, 1)
-        ?? closest(values, holding.shares);
+      // 평단가: 컬럼 → 라벨-값(세로형 포함) → 기존값 근사
       const avgPrice = nearestColumn(rowNumbers, avgPriceX)
         ?? labeledValue(lines, positionedLines, [/평균금액/, /평균단가/, /매입단가/, /평단/, /^평균/], holding.ticker, 10)
-        ?? closest(values, holding.avg_price, shares ?? undefined);
+        ?? closest(values, holding.avg_price);
+      // 보유수량: 컬럼 → 라벨-값
+      let shares = nearestColumn(rowNumbers, sharesX)
+        ?? labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], holding.ticker, 1);
+      // "보유 수량" 라벨이 OCR로 깨져도, 투자원금 ÷ 평균단가 로 수량을 역산한다.
+      if (shares == null && avgPrice != null && avgPrice > 0) {
+        const principal = labeledValue(lines, positionedLines, [/투자원금/, /매입금액/, /매수금액/, /투자금액/], holding.ticker, 100);
+        if (principal != null) {
+          const derived = principal / avgPrice;
+          if (derived > 0 && derived < 100_000_000) {
+            shares = derived >= 1 ? Math.round(derived) : Math.round(derived * 1e6) / 1e6;
+          }
+        }
+      }
+      if (shares == null) shares = closest(values, holding.shares);
       rows.push({
         holding,
         accountName: account.name,
