@@ -56,6 +56,21 @@ function containment(needle: string, haystack: string): number {
   return total ? hit / total : 0;
 }
 
+// 종목명/OCR 줄을 의미 토큰(영문런·숫자런·한글런)으로 분리
+function wordTokens(value: string): string[] {
+  return value.toLocaleLowerCase('ko-KR').match(/[a-z]+\d*|\d+|[가-힣]+/g) ?? [];
+}
+
+// OCR 줄의 핵심 토큰(숫자 제외)이 종목명 토큰에 얼마나 들어있는지 0~1.
+// 종목명이 길고("SOL AI반도체TOP2플러스") OCR엔 약어("SOL TOP2")만 잡힐 때 잡아낸다.
+// 2개 이상 일치할 때만 신뢰(단일 'SOL' 오탐 방지).
+function tokenContainment(nameTokens: string[], lineTokens: string[]): number {
+  const sig = lineTokens.filter((t) => t.length >= 2 && !/^\d+$/.test(t));
+  if (!sig.length) return 0;
+  const hit = sig.filter((t) => nameTokens.some((nt) => nt === t || nt.includes(t) || t.includes(nt))).length;
+  return hit >= 2 ? hit / sig.length : 0;
+}
+
 function numbersIn(value: string, ticker: string | null): number[] {
   return (value.match(/[-+]?\d[\d,]*(?:\.\d+)?/g) ?? [])
     .filter((token) => token.replace(/,/g, '') !== ticker)
@@ -179,6 +194,7 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
     ? positionedLines.map((line) => line.text)
     : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const keyedLines = lines.map((line) => normalized(line));
+  const tokenizedLines = lines.map((line) => wordTokens(line));
   const rows: CandidateRow[] = [];
   const sharesX = headerPosition(positionedLines, [/보유수량/, /잔고수량/, /^수량$/]);
   const avgPriceX = headerPosition(positionedLines, [/평균단가/, /매입단가/, /평단/, /^단가$/]);
@@ -187,6 +203,7 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
   account.holdings.forEach((holding) => {
     const nameKey = normalized(holding.name);
     const tickerKey = normalized(holding.ticker ?? '');
+    const nameTokens = wordTokens(holding.name);
 
     // OCR 잡음을 견디는 퍼지 매칭: 줄마다 이름/티커 포함도 점수를 매겨 최고점 줄을 고른다.
     let bestIndex = -1;
@@ -195,6 +212,8 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
       let score = 0;
       if (tickerKey.length >= 2) score = Math.max(score, containment(tickerKey, key));
       if (nameKey.length >= 2) score = Math.max(score, containment(nameKey, key));
+      // 약어 대응: OCR 줄의 토큰이 종목명에 들어있는 비율(역방향)도 본다.
+      score = Math.max(score, tokenContainment(nameTokens, tokenizedLines[index]));
       if (score > bestScore) {
         bestScore = score;
         bestIndex = index;

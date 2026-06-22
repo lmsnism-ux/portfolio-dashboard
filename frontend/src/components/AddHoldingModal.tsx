@@ -158,11 +158,11 @@ export default function AddHoldingModal({ account, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="자산 추가"
-        className="modal-content mobile-sheet bg-toss-card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-[var(--shadow-toss-pop)] overflow-y-auto"
+        className="modal-content bg-toss-card w-full sm:max-w-md h-[100dvh] sm:h-auto sm:max-h-[88vh] rounded-none sm:rounded-3xl shadow-[var(--shadow-toss-pop)] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
-        <div className="sticky top-0 bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between z-10">
+        <div className="flex-none bg-toss-card px-5 pt-5 pb-3 flex items-start justify-between border-b border-toss-border/40">
           <div>
             <p className="text-xs text-toss-text-tertiary">{account.name}</p>
             <h2 className="text-lg font-bold text-toss-text-primary">자산 추가</h2>
@@ -180,7 +180,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
           </div>
         </div>
 
-        <div className="px-5 py-2 space-y-4 pb-4">
+        <div className="flex-1 overflow-y-auto px-5 py-2 space-y-4">
 
           {/* ── 주식 모드: 검색 페이즈 ── */}
           {mode === 'stock' && phase === 'search' && (
@@ -388,7 +388,7 @@ export default function AddHoldingModal({ account, onClose }: Props) {
 
         {/* 하단 버튼 */}
         {(mode === 'cash' || phase === 'fill') && (
-          <div className="sticky bottom-0 bg-toss-card px-5 pt-3 pb-5 border-t border-toss-border flex gap-2">
+          <div className="flex-none bg-toss-card px-5 pt-3 pb-5 border-t border-toss-border flex gap-2" style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
             <button
               onClick={onClose}
               className="flex-1 py-3 rounded-xl bg-toss-bg text-toss-text-primary font-semibold active:scale-[0.98]"
