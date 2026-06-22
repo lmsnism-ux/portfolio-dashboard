@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, ImagePlus, LoaderCircle, ShieldCheck } from 'lucide-react';
-import { patchHoldingsBulk } from '../api';
+import { Check, ChevronRight, ImagePlus, LoaderCircle, Plus, Search, ShieldCheck } from 'lucide-react';
+import { createHolding, patchHoldingsBulk, searchTickers } from '../api';
+import type { TickerSearchResult } from '../api';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 
 interface CandidateRow {
@@ -312,6 +313,26 @@ function extractCandidates(text: string, account: AccountData, tsv?: string | nu
   return rows;
 }
 
+// 종목을 모르는 상태에서도 이미지의 수량·평단을 추출한다(신규 종목 추가용).
+function extractGeneric(text: string, tsv?: string | null): { shares: number | null; avgPrice: number | null } {
+  const positionedLines = parseTsv(tsv);
+  const lines = positionedLines.length
+    ? positionedLines.map((line) => line.text)
+    : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const avgPrice = labeledValue(lines, positionedLines, [/평균금액/, /평균단가/, /매입단가/, /평단/, /^평균/], null, 10);
+  let shares = labeledValue(lines, positionedLines, [/보유수량/, /잔고수량/, /^수량/], null, 1);
+  if (shares == null && avgPrice != null && avgPrice > 0) {
+    const principal = labeledValue(lines, positionedLines, [/투자원금/, /매입금액/, /매수금액/, /투자금액/], null, 100);
+    if (principal != null) {
+      const derived = principal / avgPrice;
+      if (derived > 0 && derived < 100_000_000) {
+        shares = derived >= 1 ? Math.round(derived) : Math.round(derived * 1e6) / 1e6;
+      }
+    }
+  }
+  return { shares, avgPrice };
+}
+
 export default function ScreenshotImportCard({ data }: { data: PortfolioSummary }) {
   const queryClient = useQueryClient();
   // '' = 전체 계좌에서 찾기 (기본). 특정 계좌명이면 그 계좌만 대조.
@@ -326,6 +347,66 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
     () => (accountName ? data.accounts.filter((item) => item.name === accountName) : data.accounts),
     [accountName, data.accounts],
   );
+
+  // ── 신규 종목 추가용 상태 (계좌에 없는 종목을 이미지로 새로 등록) ──
+  const [newReady, setNewReady] = useState(false);       // OCR에서 숫자를 뽑아 새 종목 폼을 띄울 준비됨
+  const [newName, setNewName] = useState('');
+  const [newTicker, setNewTicker] = useState('');
+  const [newAccount, setNewAccount] = useState(data.accounts[0]?.name ?? '');
+  const [newShares, setNewShares] = useState('');
+  const [newAvg, setNewAvg] = useState('');
+  const [newSearchQ, setNewSearchQ] = useState('');
+  const [newResults, setNewResults] = useState<TickerSearchResult[]>([]);
+  const [newSearching, setNewSearching] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 종목 검색(디바운스) — 깨진 OCR 이름을 정식명+티커로 바꾸기 위함
+  useEffect(() => {
+    const q = newSearchQ.trim();
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      if (q.length < 1) { setNewResults([]); return; }
+      setNewSearching(true);
+      const items = await searchTickers(q);
+      setNewResults(items);
+      setNewSearching(false);
+    }, 300);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [newSearchQ]);
+
+  const pickSearchResult = (r: TickerSearchResult) => {
+    setNewName(r.name);
+    setNewTicker(r.ticker);
+    setNewResults([]);
+    setNewSearchQ('');
+  };
+
+  const addNewHolding = async () => {
+    if (!newName.trim() || !newAccount) return;
+    const sharesN = parseFloat(newShares);
+    const avgN = parseFloat(newAvg);
+    const isUsd = data.accounts.find((a) => a.name === newAccount)?.currency === 'USD';
+    setAdding(true);
+    try {
+      await createHolding({
+        account_name: newAccount,
+        name: newName.trim(),
+        ticker: newTicker.trim() || null,
+        shares: Number.isFinite(sharesN) ? sharesN : null,
+        avg_price_krw: !isUsd && Number.isFinite(avgN) ? avgN : undefined,
+        avg_price_usd: isUsd && Number.isFinite(avgN) ? avgN : undefined,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      setStatus(`'${newName.trim()}'을(를) ${newAccount}에 새로 추가했어요.`);
+      setNewReady(false);
+      setNewName(''); setNewTicker(''); setNewShares(''); setNewAvg('');
+    } catch (err) {
+      setStatus(`새 종목 추가 실패: ${(err as Error).message}`);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   useEffect(() => () => {
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -344,6 +425,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
     });
     setRows([]);
     setRawOcrText('');
+    setNewReady(false);
     setProgress(0);
     setStatus(valid.length > 1
       ? `이미지 ${valid.length}장에서 글자를 읽는 중이에요. 처음에는 한글 인식 파일을 내려받아 조금 걸릴 수 있어요.`
@@ -361,6 +443,7 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       // 여러 장을 순차 인식해 후보를 누적·병합(같은 종목은 수량이 채워진 쪽 우선).
       const merged = new Map<string, CandidateRow>();
       const allTexts: string[] = [];
+      const generic = { shares: null as number | null, avgPrice: null as number | null };
       for (let i = 0; i < valid.length; i += 1) {
         if (valid.length > 1) setStatus(`이미지 ${i + 1}/${valid.length}에서 글자를 읽는 중이에요.`);
         setProgress(0);
@@ -376,6 +459,10 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
           candidates = scan(original.data.text, original.data.tsv);
         }
         allTexts.push(result.data.text);
+        // 신규 종목 추가용: 종목과 무관하게 수량·평단을 한 번 뽑아 둔다(가장 정보 많은 이미지 기준).
+        const g = extractGeneric(result.data.text, result.data.tsv);
+        if (g.avgPrice != null && generic.avgPrice == null) generic.avgPrice = g.avgPrice;
+        if (g.shares != null && generic.shares == null) generic.shares = g.shares;
         for (const candidate of candidates) {
           const key = `${candidate.accountName}|${candidate.holding.ticker || candidate.holding.name}`;
           const existing = merged.get(key);
@@ -386,9 +473,15 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
       const candidates = [...merged.values()];
       setRows(candidates);
       setProgress(100);
+      // 이미지에서 수량/평단이 잡히면 '새 종목으로 추가' 폼을 준비한다.
+      if (generic.shares != null || generic.avgPrice != null) {
+        setNewShares(generic.shares != null ? String(generic.shares) : '');
+        setNewAvg(generic.avgPrice != null ? String(generic.avgPrice) : '');
+        setNewReady(true);
+      }
       setStatus(candidates.length
         ? `${candidates.length}개 종목을 찾았어요. 숫자를 확인한 뒤 반영해주세요.`
-        : '일치하는 종목을 찾지 못했어요. 계좌와 캡처의 종목명이 맞는지 아래 인식 텍스트를 확인해주세요.');
+        : '계좌에 이미 있는 종목은 못 찾았어요. 아래에서 새 종목으로 추가하거나 인식된 텍스트를 확인해주세요.');
     } catch (err) {
       setRawOcrText(String(err));
       setStatus('이미지를 읽지 못했어요. 인터넷 연결과 이미지 선명도를 확인해주세요.');
@@ -536,6 +629,76 @@ export default function ScreenshotImportCard({ data }: { data: PortfolioSummary 
             ))}
             <button type="button" onClick={() => void apply()} disabled={saving} className="primary-button flex min-h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold disabled:opacity-50">
               <Check size={17} />확인한 숫자 반영
+            </button>
+          </div>
+        )}
+
+        {/* ── 새 종목으로 추가 (계좌에 없는 종목) ── */}
+        {newReady && (
+          <div className="mt-4 rounded-2xl border border-dashed border-toss-blue/40 bg-toss-blue-soft/40 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-toss-text-primary">
+              <Plus size={16} className="text-toss-blue" />새 종목으로 추가
+            </div>
+            <p className="text-[11px] leading-relaxed text-toss-text-tertiary">
+              계좌에 없는 종목이면 여기서 새로 추가하세요. 수량·평단은 이미지에서 채웠어요.
+              한글 이름은 깨질 수 있으니 <b>검색으로 정확한 종목</b>을 골라주세요(가격 자동조회됨).
+            </p>
+
+            {/* 종목 검색 */}
+            <div>
+              <label className="search-field">
+                <Search size={15} className="shrink-0" />
+                <input
+                  value={newSearchQ}
+                  onChange={(e) => setNewSearchQ(e.target.value)}
+                  placeholder="종목명·티커 검색 (예: SOL TOP2, QQQ)"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-toss-text-primary outline-none"
+                />
+                {newSearching && <LoaderCircle size={15} className="shrink-0 animate-spin text-toss-blue" />}
+              </label>
+              {newResults.length > 0 && (
+                <div className="mt-2 rounded-xl border border-toss-border overflow-hidden divide-y divide-toss-border/60">
+                  {newResults.map((r) => (
+                    <button key={r.symbol} type="button" onClick={() => pickSearchResult(r)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-toss-bg">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${r.market === 'KR' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'}`}>{r.market}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-toss-text-primary">{r.name}</span>
+                        <span className="block text-[10px] text-toss-text-tertiary">{r.ticker} · {r.type === 'ETF' ? 'ETF' : '주식'}</span>
+                      </span>
+                      <ChevronRight size={14} className="text-toss-text-tertiary shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 종목명 / 티커 */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[11px] text-toss-text-tertiary">종목 이름
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="검색 후 자동 입력" className="mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+              </label>
+              <label className="text-[11px] text-toss-text-tertiary">티커
+                <input value={newTicker} onChange={(e) => setNewTicker(e.target.value)} placeholder="예: 0167A0" className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue uppercase" />
+              </label>
+            </div>
+
+            {/* 계좌 / 수량 / 평단 */}
+            <div className="grid grid-cols-3 gap-2">
+              <label className="text-[11px] text-toss-text-tertiary">계좌
+                <select value={newAccount} onChange={(e) => setNewAccount(e.target.value)} className="mt-1 w-full rounded-xl bg-toss-bg px-2 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue">
+                  {data.accounts.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+                </select>
+              </label>
+              <label className="text-[11px] text-toss-text-tertiary">보유 수량
+                <input inputMode="decimal" value={newShares} onChange={(e) => setNewShares(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+              </label>
+              <label className="text-[11px] text-toss-text-tertiary">평균 매수가
+                <input inputMode="decimal" value={newAvg} onChange={(e) => setNewAvg(e.target.value)} className="num mt-1 w-full rounded-xl bg-toss-bg px-3 py-2 text-sm text-toss-text-primary outline-none focus:ring-2 focus:ring-toss-blue" />
+              </label>
+            </div>
+
+            <button type="button" onClick={() => void addNewHolding()} disabled={adding || !newName.trim() || !newAccount} className="primary-button flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold disabled:opacity-50">
+              <Plus size={16} />{adding ? '추가 중...' : `${newAccount || '계좌'}에 새 종목 추가`}
             </button>
           </div>
         )}
