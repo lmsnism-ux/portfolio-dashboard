@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Receipt, Trash2 } from 'lucide-react';
+import { X, Receipt, Trash2, Search, LoaderCircle, TrendingUp } from 'lucide-react';
 import type { AccountData, HoldingData } from '../types';
-import { deleteHolding, patchHolding } from '../api';
+import type { TickerSearchResult } from '../api';
+import { deleteHolding, patchHolding, searchTickers } from '../api';
 import TradeModal from './TradeModal';
 
 interface Props {
@@ -25,6 +26,24 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
   const [snapshotVal, setSnapshotVal] = useState<string>(
     holding.is_snapshot ? (holding.value_krw?.toString() ?? '') : '',
   );
+  // 스냅샷(고정금액) → 실시간 시세 추적 전환용
+  const [convertTicker, setConvertTicker] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState<TickerSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      if (!q) { setSearchResults([]); return; }
+      setSearching(true);
+      setSearchResults(await searchTickers(q));
+      setSearching(false);
+    }, 120);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [searchQ]);
   const [autoBuyEnabled, setAutoBuyEnabled] = useState<boolean>(
     holding.auto_buy?.enabled ?? false,
   );
@@ -80,15 +99,19 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
     const amtNum = parseFloat(autoBuyAmount);
 
     const snapNum = parseFloat(snapshotVal);
+    // 스냅샷 종목인데 티커+주수를 입력했으면 실시간 시세 종목으로 전환
+    const converting = holding.is_snapshot && convertTicker.trim() !== '' && Number.isFinite(sharesNum);
 
     mutation.mutate({
       account_name: account.name,
       holding_key: holding.ticker || holding.name,
-      shares: Number.isFinite(sharesNum) ? sharesNum : null,
+      ticker: converting ? convertTicker.trim() : undefined,
+      shares: Number.isFinite(sharesNum) ? sharesNum : (converting ? undefined : null),
       avg_price_krw: !isUsd && Number.isFinite(avgNum) ? avgNum : undefined,
       avg_price_usd: isUsd && Number.isFinite(avgNum) ? avgNum : undefined,
-      snapshot_value_krw: holding.is_snapshot && !isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
-      snapshot_value_usd: holding.is_snapshot && isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
+      // 전환 중이면 스냅샷 잔액을 보내지 않는다(백엔드가 제거).
+      snapshot_value_krw: !converting && holding.is_snapshot && !isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
+      snapshot_value_usd: !converting && holding.is_snapshot && isUsd && Number.isFinite(snapNum) ? snapNum : undefined,
       auto_buy: {
         enabled: autoBuyEnabled,
         amount_usd: isUsd && Number.isFinite(amtNum) ? amtNum : undefined,
@@ -130,17 +153,68 @@ export default function EditHoldingModal({ account, holding, onClose }: Props) {
 
         <div className="px-5 py-3 space-y-5">
           {holding.is_snapshot ? (
-            /* 예수금/스냅샷 종목: 잔액만 편집 */
-            <Field label={`잔액 (${isUsd ? 'USD' : 'KRW'})`}>
-              <input
-                type="number"
-                step="any"
-                value={snapshotVal}
-                onChange={(e) => setSnapshotVal(e.target.value)}
-                className="num w-full bg-toss-bg rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-toss-blue"
-                placeholder={isUsd ? '예: 1500.00' : '예: 500000'}
-              />
-            </Field>
+            /* 예수금/스냅샷 종목: 잔액 + (선택) 실시간 추적 전환 */
+            <>
+              <Field label={`잔액 (${isUsd ? 'USD' : 'KRW'})`}>
+                <input
+                  type="number"
+                  step="any"
+                  value={snapshotVal}
+                  onChange={(e) => setSnapshotVal(e.target.value)}
+                  disabled={convertTicker.trim() !== ''}
+                  className="num w-full bg-toss-bg rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-toss-blue disabled:opacity-40"
+                  placeholder={isUsd ? '예: 1500.00' : '예: 500000'}
+                />
+              </Field>
+
+              <div className="rounded-2xl border border-dashed border-toss-blue/40 bg-toss-blue-soft/40 p-4 space-y-3">
+                <p className="flex items-center gap-1.5 text-sm font-bold text-toss-text-primary">
+                  <TrendingUp size={15} className="text-toss-blue" /> 실시간 시세로 추적하기 (선택)
+                </p>
+                <p className="text-[11px] leading-relaxed text-toss-text-tertiary">
+                  종목을 검색해 고르고 보유 주수·평단을 입력하면, 고정 금액 대신 <b>실시간 시세 × 주수</b>로 자동 평가돼요.
+                </p>
+
+                {convertTicker ? (
+                  <div className="flex items-center justify-between rounded-xl bg-toss-card px-3 py-2.5">
+                    <span className="num text-sm font-bold text-toss-blue">티커 {convertTicker}</span>
+                    <button type="button" onClick={() => { setConvertTicker(''); setSearchQ(''); }} className="text-xs font-semibold text-toss-text-tertiary">바꾸기</button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="search-field">
+                      <Search size={15} className="shrink-0" />
+                      <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="종목명·티커 검색 (예: SOL TOP2, QQQ)" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+                      {searching && <LoaderCircle size={15} className="shrink-0 animate-spin text-toss-blue" />}
+                    </label>
+                    {searchResults.length > 0 && (
+                      <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-toss-border divide-y divide-toss-border/60">
+                        {searchResults.map((r) => (
+                          <button key={r.symbol} type="button"
+                            onClick={() => { setConvertTicker(r.ticker); setSearchQ(''); setSearchResults([]); }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-toss-bg">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${r.market === 'KR' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'}`}>{r.market}</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-toss-text-primary">{r.name}</span>
+                            <span className="num text-[10px] text-toss-text-tertiary">{r.ticker}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {convertTicker && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="보유 수량">
+                      <input type="number" step="any" value={shares} onChange={(e) => setShares(e.target.value)} className="num w-full bg-toss-card rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-toss-blue" placeholder="0" />
+                    </Field>
+                    <Field label={`평단가 (${isUsd ? 'USD' : 'KRW'})`}>
+                      <input type="number" step="any" value={avgPrice} onChange={(e) => setAvgPrice(e.target.value)} className="num w-full bg-toss-card rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-toss-blue" placeholder="0" />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            </>
           ) : (
             <>
               {/* 체결 기록 진입 */}

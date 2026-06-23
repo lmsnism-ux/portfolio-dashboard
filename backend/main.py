@@ -372,6 +372,8 @@ class HoldingUpdate(BaseModel):
     avg_price_usd: Optional[float] = None
     snapshot_value_krw: Optional[float] = None   # 예수금/스냅샷 잔액
     snapshot_value_usd: Optional[float] = None
+    ticker: Optional[str] = None                 # 스냅샷 → 실시간 종목 전환용
+    asset_class: Optional[str] = None
     auto_buy: Optional[AutoBuyUpdate] = None
     remove_auto_buy: bool = False  # True → auto_buy 키 완전 제거
 
@@ -408,6 +410,18 @@ async def update_holding(update: HoldingUpdate):
             holding["snapshot_value_krw"] = update.snapshot_value_krw
         if update.snapshot_value_usd is not None:
             holding["snapshot_value_usd"] = update.snapshot_value_usd
+        if update.asset_class:
+            holding["asset_class"] = update.asset_class
+        # 티커가 들어오면 스냅샷(고정금액) → 실시간 시세 종목으로 전환한다.
+        if update.ticker is not None:
+            ticker = update.ticker.strip()
+            if ticker:
+                holding["ticker"] = ticker
+                # 실시간 종목은 보유수량 기반으로 평가 → 스냅샷 잔액 제거
+                holding.pop("snapshot_value_krw", None)
+                holding.pop("snapshot_value_usd", None)
+            else:
+                holding.pop("ticker", None)
         if update.remove_auto_buy:
             holding.pop("auto_buy", None)
         elif update.auto_buy is not None:

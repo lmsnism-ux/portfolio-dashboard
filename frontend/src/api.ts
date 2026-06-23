@@ -116,6 +116,8 @@ export interface HoldingPatch {
   avg_price_usd?: number | null;
   snapshot_value_krw?: number | null;
   snapshot_value_usd?: number | null;
+  ticker?: string | null;
+  asset_class?: string | null;
   remove_auto_buy?: boolean;
   auto_buy?: {
     enabled: boolean;

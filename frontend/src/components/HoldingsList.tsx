@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeftRight, Pencil, Plus, Search } from 'lucide-react';
-import { fmtKRW, fmtPct, colorClass, isPriceStale, relativeTime } from '../utils';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeftRight, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
+import { fmtKRW, fmtKRWFull, fmtPct, colorClass, isPriceStale, relativeTime } from '../utils';
+import { reorderAccounts } from '../api';
 import type { AccountData, HoldingData, PortfolioSummary } from '../types';
 import IrpMonitor from './IrpMonitor';
 
@@ -56,6 +58,21 @@ function BrokerBadge({ accountName }: { accountName: string }) {
 export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onAddAccount }: Props) {
   const [query, setQuery] = useState('');
   const [period, setPeriod] = useState<PeriodMode>('전체');
+  const [editMode, setEditMode] = useState(false);
+  const queryClient = useQueryClient();
+
+  const reorderMutation = useMutation({
+    mutationFn: reorderAccounts,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
+  });
+
+  const moveAccount = (index: number, dir: -1 | 1) => {
+    const order = data.accounts.map(a => a.name);
+    const target = index + dir;
+    if (target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    reorderMutation.mutate(order);
+  };
 
   const accounts = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase('ko-KR');
@@ -70,14 +87,23 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
       .filter(account => account.holdings.length > 0);
   }, [data.accounts, query]);
 
+  const investTotal = data.accounts.reduce((s, a) => s + a.value_krw, 0);
+
   return (
     <section aria-labelledby="holdings-title">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 id="holdings-title" className="text-[18px] font-bold text-toss-text-primary">보유 종목</h2>
-          <p className="mt-1 text-[13px] text-toss-text-tertiary">종목을 누르면 바로 수정할 수 있어요.</p>
+          <p className="num mt-1 text-[15px] font-bold text-toss-text-secondary">
+            계좌 합계 {hideAssets ? '••••••' : fmtKRWFull(investTotal)}
+          </p>
         </div>
-        {onAddAccount && <button onClick={onAddAccount} className="secondary-button"><Plus size={16} /> 계좌</button>}
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={() => setEditMode(v => !v)} className={`secondary-button ${editMode ? 'text-toss-blue' : ''}`}>
+            {editMode ? '완료' : '편집'}
+          </button>
+          {onAddAccount && <button onClick={onAddAccount} className="secondary-button"><Plus size={16} /> 계좌</button>}
+        </div>
       </div>
 
       <div className="mb-4 flex gap-2">
@@ -98,6 +124,12 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
           <article key={account.name} className="surface-card overflow-hidden">
             <header className="flex items-center justify-between gap-3 border-b border-toss-border/60 px-5 py-4">
               <div className="flex min-w-0 items-center gap-3">
+                {editMode && !query && (
+                  <div className="flex flex-col">
+                    <button type="button" onClick={() => moveAccount(data.accounts.findIndex(a => a.name === account.name), -1)} aria-label="위로" className="p-0.5 text-toss-text-tertiary hover:text-toss-blue active:scale-90 disabled:opacity-20" disabled={data.accounts[0]?.name === account.name}><ChevronUp size={16} /></button>
+                    <button type="button" onClick={() => moveAccount(data.accounts.findIndex(a => a.name === account.name), 1)} aria-label="아래로" className="p-0.5 text-toss-text-tertiary hover:text-toss-blue active:scale-90 disabled:opacity-20" disabled={data.accounts[data.accounts.length - 1]?.name === account.name}><ChevronDown size={16} /></button>
+                  </div>
+                )}
                 <BrokerBadge accountName={account.name} />
                 <div className="min-w-0">
                   <h3 className="truncate text-[16px] font-bold text-toss-text-primary">{account.name}</h3>
@@ -106,7 +138,7 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-right">
-                  <strong className="num block text-[15px] text-toss-text-primary">{hideAssets ? '••••••' : fmtKRW(account.value_krw)}</strong>
+                  <strong className="num block text-[15px] text-toss-text-primary">{hideAssets ? '••••••' : fmtKRWFull(account.value_krw)}</strong>
                   <small className={`num mt-1 block text-[13px] ${colorClass(account.day_change_krw)}`}>오늘 {account.day_change_krw >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(account.day_change_krw)}</small>
                 </div>
                 <button type="button" onClick={() => onAdd(account)} aria-label={`${account.name}에 종목 추가`} className="icon-button"><Plus size={18} /></button>
@@ -140,14 +172,13 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
                     </button>
 
                     <div className="shrink-0 text-right">
-                      <strong className="num block text-[15px] text-toss-text-primary">{hideAssets ? '••••' : fmtKRW(holding.value_krw)}</strong>
+                      <strong className="num block text-[15px] text-toss-text-primary">{hideAssets ? '••••' : fmtKRWFull(holding.value_krw)}</strong>
                       {changeKrw !== null && <small className={`num mt-1 block text-[13px] ${colorClass(changeKrw)}`}>{changeKrw >= 0 ? '+' : ''}{hideAssets ? '••••' : fmtKRW(changeKrw)} {fmtPct(changePct)}</small>}
                     </div>
 
-                    <div className="flex shrink-0 gap-1">
-                      {!holding.is_snapshot && <button onClick={() => onTrade(account, holding)} className="icon-button" aria-label={`${holding.name} 거래`}><ArrowLeftRight size={17} /></button>}
-                      <button onClick={() => onEdit(account, holding)} className="edit-button" aria-label={`${holding.name} 수정`}><Pencil size={16} /><span>수정</span></button>
-                    </div>
+                    {editMode && !holding.is_snapshot && (
+                      <button onClick={() => onTrade(account, holding)} className="icon-button shrink-0" aria-label={`${holding.name} 거래`}><ArrowLeftRight size={17} /></button>
+                    )}
                   </div>
                 );
               })}
