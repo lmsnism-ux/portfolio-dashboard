@@ -26,7 +26,7 @@ function MiniSparkline({ values, up }: { values: number[]; up: boolean }) {
   );
 }
 
-export default function MarketIndicesCard() {
+export default function MarketIndicesCard({ compact = false }: { compact?: boolean }) {
   const { data: indices, isLoading } = useQuery({
     queryKey: ['marketIndices'],
     queryFn: fetchMarketIndices,
@@ -39,8 +39,34 @@ export default function MarketIndicesCard() {
     staleTime: 30 * 60 * 1000,
   });
 
-  if (isLoading) return <div className="skeleton h-44 rounded-[var(--radius-toss-lg)]" />;
+  if (isLoading) return <div className={`skeleton rounded-[var(--radius-toss-lg)] ${compact ? 'h-20' : 'h-44'}`} />;
   if (!indices) return null;
+
+  // 홈 상단용: 큰 헤더·스파크라인 없이 한 줄에 간결하게
+  if (compact) {
+    return (
+      <section className="surface-card px-4 py-3" aria-label="주요 시장 현황">
+        <div className="grid grid-cols-3 gap-2">
+          {INDEX_KEYS.map((key) => {
+            const item = indices[key];
+            if (!item || item.value == null) return null;
+            const up = (item.change_pct ?? 0) >= 0;
+            return (
+              <div key={key} className="min-w-0">
+                <p className="truncate text-[11px] font-semibold text-toss-text-tertiary">{item.label}</p>
+                <p className="num truncate text-[15px] font-bold text-toss-text-primary leading-tight">
+                  {item.value.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
+                </p>
+                <p className={`num text-[12px] font-bold ${up ? 'text-toss-up' : 'text-toss-down'}`}>
+                  {up ? '+' : ''}{item.change_pct?.toFixed(2) ?? '-'}%
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="surface-card p-5" aria-labelledby="market-indices-title">

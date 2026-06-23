@@ -209,6 +209,9 @@ export default function App() {
       <main key={tab} className="tab-screen max-w-3xl mx-auto px-4 sm:px-5 py-5 space-y-5 pb-28">
         {tab === 'home' && (
           <>
+            <Suspense fallback={<div className="skeleton h-24 rounded-[var(--radius-toss-lg)]" />}>
+              <MarketIndicesCard compact />
+            </Suspense>
             <Suspense fallback={<div className="skeleton h-[360px] rounded-[var(--radius-toss-lg)]" />}>
               <HomeCharts
                 data={data}
@@ -216,9 +219,6 @@ export default function App() {
                 onOpenAnalysis={() => handleTabChange('analysis')}
                 onOpenAssets={() => handleTabChange('assets')}
               />
-            </Suspense>
-            <Suspense fallback={<div className="skeleton h-44 rounded-[var(--radius-toss-lg)]" />}>
-              <MarketIndicesCard />
             </Suspense>
             <DecisionCenter data={data} onOpenAnalysis={() => handleTabChange('analysis')} />
             <HomeOverview
