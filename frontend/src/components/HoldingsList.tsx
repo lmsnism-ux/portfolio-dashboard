@@ -20,6 +20,39 @@ function HoldingMark({ holding }: { holding: HoldingData }) {
   return <span className="holding-mark" aria-hidden="true">{label || '·'}</span>;
 }
 
+// 계좌명 → 증권사/은행 배지(색·약칭). 뱅크샐러드처럼 기관별로 구분.
+function brokerStyle(accountName: string): { label: string; bg: string } {
+  const n = accountName;
+  if (n.includes('토스')) return { label: 'toss', bg: '#3182F6' };
+  if (n.includes('미래에셋') || n.includes('미래')) return { label: '미래', bg: '#F37321' };
+  if (n.includes('삼성')) return { label: '삼성', bg: '#1428A0' };
+  if (n.includes('국민') || n.includes('KB')) return { label: 'KB', bg: '#F5A100' };
+  if (n.includes('기업') || n.includes('IBK')) return { label: 'IBK', bg: '#0B4DA2' };
+  if (n.includes('신한')) return { label: '신한', bg: '#0046FF' };
+  if (n.includes('NH') || n.includes('농협')) return { label: 'NH', bg: '#1AAB39' };
+  if (n.includes('키움')) return { label: '키움', bg: '#C8102E' };
+  if (n.includes('한국투자') || n.includes('한투')) return { label: '한투', bg: '#C00D2D' };
+  if (n.includes('하나')) return { label: '하나', bg: '#008C95' };
+  if (n.includes('우리')) return { label: '우리', bg: '#0067AC' };
+  if (n.includes('카카오')) return { label: 'kakao', bg: '#FEE500' };
+  return { label: n.replace(/[^A-Za-z0-9가-힣]/g, '').slice(0, 2) || '··', bg: '#8B95A1' };
+}
+
+function BrokerBadge({ accountName }: { accountName: string }) {
+  const s = brokerStyle(accountName);
+  const lower = s.label === 'toss' || s.label === 'kakao';
+  const dark = s.bg === '#FEE500'; // 카카오 노랑은 검은 글자
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-extrabold ${lower ? 'text-[10px]' : 'text-[13px]'}`}
+      style={{ background: s.bg, color: dark ? '#191919' : '#fff' }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
 export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade, onAddAccount }: Props) {
   const [query, setQuery] = useState('');
   const [period, setPeriod] = useState<PeriodMode>('전체');
@@ -64,9 +97,12 @@ export default function HoldingsList({ data, hideAssets, onEdit, onAdd, onTrade,
         {accounts.map(account => (
           <article key={account.name} className="surface-card overflow-hidden">
             <header className="flex items-center justify-between gap-3 border-b border-toss-border/60 px-5 py-4">
-              <div className="min-w-0">
-                <h3 className="truncate text-[16px] font-bold text-toss-text-primary">{account.name}</h3>
-                <p className="mt-1 text-[13px] text-toss-text-tertiary">{account.type} · {account.holdings.length}종목</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <BrokerBadge accountName={account.name} />
+                <div className="min-w-0">
+                  <h3 className="truncate text-[16px] font-bold text-toss-text-primary">{account.name}</h3>
+                  <p className="mt-1 text-[13px] text-toss-text-tertiary">{account.type} · {account.holdings.length}종목</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-right">
